@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Verité</title>
-    <link rel="stylesheet" href="src/styles.css" />
+    <link rel="stylesheet" href="src/styles.css?v=20260506-layout2" />
   </head>
   <body>
     <header class="topbar">
@@ -115,6 +115,17 @@
             </div>
           </section>
 
+          <section class="analysis-summary" aria-label="analysis summary">
+            <div class="analysis-summary-head">
+              <div class="analysis-summary-title">分析总结</div>
+              <div id="analysisSummaryVerdict" class="analysis-summary-verdict">--</div>
+            </div>
+            <div class="analysis-summary-body">
+              <div id="analysisSummaryText" class="analysis-summary-text">--</div>
+              <div id="analysisSummaryPoints" class="analysis-summary-points"></div>
+            </div>
+          </section>
+
           <section class="table-section">
             <div class="section-title">七角度评分</div>
             <div class="table-wrap">
@@ -153,13 +164,13 @@
 
           <section class="split">
             <div class="table-section" id="claimSplitSection">
-              <div class="section-title">Claim 拆分</div>
+              <div class="section-title">信息拆解</div>
               <div class="table-wrap">
                 <table>
                   <thead>
                     <tr>
                       <th>ID</th>
-                      <th>主张</th>
+                      <th>待核验信息</th>
                       <th>类型</th>
                       <th>值得核验</th>
                       <th>优先级</th>
@@ -356,6 +367,6 @@
       </section>
     </main>
 
-    <script src="src/app.js"></script>
+    <script src="src/app.js?v=20260506-layout2"></script>
   </body>
 </html>

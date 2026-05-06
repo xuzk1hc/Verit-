@@ -289,6 +289,16 @@ async function analyzeInput() {
     finalScore: Math.round(cappedScore),
     cap,
     verdict,
+    analysisSummary: buildClientAnalysisSummary({
+      finalScore: Math.round(cappedScore),
+      verdict,
+      cap,
+      evidence: buildEvidence(signals),
+      risks: buildRisks(signals),
+      channels: signals.channels,
+      angleScores,
+      mediaIntegrity: signals.mediaIntegrity,
+    }),
     evidence: buildEvidence(signals),
     risks: buildRisks(signals),
     sources: buildSources(signals, sourceName, media),
@@ -351,6 +361,7 @@ function enrichReportWithClientMediaIntegrity(report, media) {
   if (uploadedIndex >= 0) next.channels[uploadedIndex] = uploadedChannel;
   else next.channels.push(uploadedChannel);
 
+  next.analysisSummary = buildClientAnalysisSummary(next);
   return next;
 }
 
@@ -595,7 +606,7 @@ function calculateCap(s, impact) {
 
 function buildEvidence(s) {
   const rows = [];
-  if (s.shortAtomicClaim) rows.push(["支持", "短句已识别为可验证原子 claim", "+"]);
+  if (s.shortAtomicClaim) rows.push(["支持", "短句已识别为可直接核验的信息", "+"]);
   if (s.hasUrl) rows.push(["支持", `提供可回溯链接：${s.domain}`, "+"]);
   if (s.channelCount >= 2) rows.push(["支持", `已命中 ${s.channelCount} 个验证渠道`, "+"]);
   if (["T0", "T1", "T2"].includes(s.tier)) rows.push(["支持", `来源初评 ${s.tier}`, "+"]);
@@ -614,7 +625,7 @@ function buildEvidence(s) {
 function buildRisks(s) {
   const rows = [];
   if (s.anonymous) rows.push(["信源", "出现网传 / 匿名 / 消息人士表述", "-"]);
-  if (s.channelCount < 2) rows.push(["交叉", s.shortAtomicClaim ? "短 claim 需要自动检索新闻、官方和旁证渠道" : "缺少新闻媒体、权威发言、平台或现实旁证之间的交叉验证", "-"]);
+  if (s.channelCount < 2) rows.push(["交叉", s.shortAtomicClaim ? "短信息需要自动检索新闻、官方和旁证渠道" : "缺少新闻媒体、权威发言、平台或现实旁证之间的交叉验证", "-"]);
   if (s.socialOnly) rows.push(["传播", "当前主要来自单一社交平台", "-"]);
   if (s.screenshotLanguage && !s.hasUrl) rows.push(["溯源", "截图或转发文本缺少原始链接", "-"]);
   if (s.emotional) rows.push(["叙事", "存在强情绪或标题党语言", "-"]);
@@ -633,7 +644,7 @@ function buildSources(s, sourceName, media) {
   if (s.hasUrl) rows.push([s.domain, s.tier, s.sourceScore, "输入链接"]);
   if (sourceName) rows.push([sourceName, s.tier || "T3", s.sourceScore || 60, "用户标注"]);
   if (media.length) rows.push(["上传素材", "T4", 42, "待取证"]);
-  if (!rows.length && s.shortAtomicClaim) rows.push(["用户输入短 claim", "待检索", 52, "检索对象"]);
+  if (!rows.length && s.shortAtomicClaim) rows.push(["用户输入短信息", "待检索", 52, "检索对象"]);
   if (!rows.length) rows.push(["未提供", "T5", 18, "待补充"]);
   return rows;
 }
@@ -650,18 +661,18 @@ function detectAcademicNeed({ text = "", url = "", sourceName = "" }) {
     return { needed: true, category: "academic", reason: "输入包含论文 / 期刊 / DOI / 学术平台信号" };
   }
   if (/(医疗|医学|疾病|症状|诊断|治疗|疗效|药物|药品|疫苗|临床|试验|副作用|不良反应|感染|病毒|细菌|癌症|肿瘤|糖尿病|高血压|心脏病|心血管|抑郁|阿尔茨海默|新冠|covid|vaccine|clinical trial|randomized|placebo|drug|medicine|therapy|cancer|diabetes|hypertension|virus|infection)/i.test(combined)) {
-    return { needed: true, category: "medical", reason: "识别为医疗 / 药物 / 疾病类 claim" };
+    return { needed: true, category: "medical", reason: "识别为医疗 / 药物 / 疾病类信息" };
   }
   if (/(营养|保健品|维生素|蛋白粉|咖啡|饮酒|吸烟|减肥|肥胖|饮食|膳食|nutrition|supplement|vitamin|coffee|caffeine|alcohol|smoking|weight loss|obesity|diet)/i.test(combined)) {
-    return { needed: true, category: "nutrition", reason: "识别为营养 / 生活方式健康类 claim" };
+    return { needed: true, category: "nutrition", reason: "识别为营养 / 生活方式健康类信息" };
   }
   if (/(研究发现|论文|期刊|同行评议|实验|样本量|显著性|meta.?analysis|systematic review|peer.?review|journal|paper|study finds|researchers found|preprint|retraction)/i.test(combined)) {
     return { needed: true, category: "academic", reason: "文本声称来自研究或论文" };
   }
   if (/(气候变化|全球变暖|温室气体|碳排放|超导|量子|材料|基因编辑|crispr|climate change|global warming|greenhouse gas|superconduct|quantum|gene editing)/i.test(combined)) {
-    return { needed: true, category: "science", reason: "识别为科学研究类 claim" };
+    return { needed: true, category: "science", reason: "识别为科学研究类信息" };
   }
-  return { needed: false, category: "general", reason: "未识别科学 / 医疗 / 论文类 claim，跳过学术渠道" };
+  return { needed: false, category: "general", reason: "未识别科学 / 医疗 / 论文类信息，跳过学术渠道" };
 }
 
 function detectChannels({ combined, domain, tier, sourceName, official, quote, marketOrOfficialTrace, hasMedia, mediaIntegrity, shortAtomicClaim, academicNeed }) {
@@ -680,7 +691,7 @@ function detectChannels({ combined, domain, tier, sourceName, official, quote, m
     channelRow("authoritativeStatement", authoritativeStatement, authoritativeStatement ? 84 : 0, quote ? "声明核验" : "权威确认", authoritativeStatement ? "区分发言存在与事实为真" : pendingNote(shortAtomicClaim, "权威发言")),
     channelRow("primaryRecord", primaryRecord, primaryRecord ? 90 : 0, "原始证据", primaryRecord ? "原始文件 / 结构化记录" : pendingNote(shortAtomicClaim, "原始文件 / 数据")),
     channelRow("realWorldTrace", realWorldTrace, realWorldTrace ? 78 : 0, "外部旁证", realWorldTrace ? "现实流程痕迹可验证事件落地" : pendingNote(shortAtomicClaim, "现实旁证")),
-    channelRow("academicEvidence", academicEvidence, academicEvidence ? 68 : 0, "论文 / 指南", academicEvidence ? academicNeed?.reason || "需要学术证据辅助验证" : "跳过：未识别科学 / 医疗 / 论文类 claim"),
+    channelRow("academicEvidence", academicEvidence, academicEvidence ? 68 : 0, "论文 / 指南", academicEvidence ? academicNeed?.reason || "需要学术证据辅助验证" : "跳过：未识别科学 / 医疗 / 论文类信息"),
     channelRow("uploadedMedia", hasMedia, hasMedia ? mediaIntegrity?.score || 58 : 0, "媒介取证", hasMedia ? mediaIntegrity?.status || "需反向搜索、元数据和地理定位核验" : "未上传图片或视频"),
   ];
 }
@@ -759,6 +770,7 @@ function renderReport(report) {
   document.getElementById("reviewAt").textContent = report.review[0]?.[0] || "--";
 
   const weights = report.profile.weights;
+  renderAnalysisSummary(report.analysisSummary || buildClientAnalysisSummary(report), report);
   setRows("angleRows", Object.entries(report.angleScores).map(([key, item]) => {
     const contribution = item.score * weights[key];
     return [
@@ -792,6 +804,63 @@ function renderReport(report) {
 function setRows(id, rows) {
   const target = document.getElementById(id);
   target.innerHTML = rows.map((cells) => `<tr>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr>`).join("");
+}
+
+function renderAnalysisSummary(summary = {}, report = {}) {
+  const verdictTarget = document.getElementById("analysisSummaryVerdict");
+  const textTarget = document.getElementById("analysisSummaryText");
+  const pointsTarget = document.getElementById("analysisSummaryPoints");
+  if (!textTarget || !pointsTarget) return;
+  const score = Number(report.finalScore ?? summary.score ?? 0);
+  const verdict = report.verdict?.label || summary.verdict || verdictFor(score).label;
+  if (verdictTarget) verdictTarget.textContent = `${score}% · ${verdict}`;
+  textTarget.textContent = summary.text || "暂无分析总结。";
+  const points = Array.isArray(summary.points) ? summary.points : [];
+  pointsTarget.innerHTML = points.map((point) => `<span class="summary-point">${escapeHtml(point)}</span>`).join("");
+}
+
+function buildClientAnalysisSummary(report = {}) {
+  const finalScore = Number(report.finalScore || 0);
+  const verdict = report.verdict?.label || verdictFor(finalScore).label;
+  const evidenceRows = Array.isArray(report.evidence) ? report.evidence : [];
+  const riskRows = Array.isArray(report.risks) ? report.risks : [];
+  const channels = Array.isArray(report.channels) ? report.channels : [];
+  const supports = evidenceRows.filter((row) => row?.[0] === "支持").length;
+  const refutes = evidenceRows.filter((row) => row?.[0] === "反驳").length;
+  const hitChannels = channels.filter((channel) => channel.status === "已命中");
+  const capNote = report.cap?.value && report.cap.value < 100 ? report.cap.note : "";
+  const topRisks = riskRows.filter((row) => row?.[2] === "-").slice(0, 2).map((row) => row[1]);
+  const mediaStatus = report.mediaIntegrity?.hasMedia ? report.mediaIntegrity.status : "";
+
+  let text = `本次验证给出 ${finalScore}%（${verdict}）。`;
+  if (supports && !refutes) text += ` 系统找到了 ${supports} 条支持信号，暂未发现明显反证。`;
+  else if (supports && refutes) text += ` 系统同时存在 ${supports} 条支持信号和 ${refutes} 条反向线索，需要重点复核来源链和时间线。`;
+  else if (!supports && refutes) text += ` 系统未找到可靠支持信号，但发现 ${refutes} 条反向线索。`;
+  else text += " 系统暂未找到能直接支撑原信息的独立证据。";
+  if (hitChannels.length) text += ` 当前命中 ${hitChannels.length} 个验证渠道。`;
+  if (capNote) text += ` 总分受到“${capNote}”封顶限制。`;
+  if (mediaStatus) text += ` 上传素材的媒介完整性结论为：${mediaStatus}。`;
+  if (topRisks.length) text += ` 主要可疑点是：${topRisks.join("；")}。`;
+  text += finalScore >= 75
+    ? " 整体可以作为较高可信线索使用，但仍建议保留关键证据链接。"
+    : finalScore >= 60
+      ? " 整体可作为待确认信息参考，最好继续补充官方或原始来源。"
+      : finalScore >= 45
+        ? " 整体证据不足或存在冲突，不建议作为确定事实传播。"
+        : " 整体偏低可信，除非后续出现原始文件、官方声明或多家独立报道，否则不建议采信。";
+
+  return {
+    score: finalScore,
+    verdict,
+    text,
+    points: [
+      `支持信号 ${supports} 条`,
+      `反向线索 ${refutes} 条`,
+      `命中渠道 ${hitChannels.length} 个`,
+      capNote ? `封顶：${capNote}` : "",
+      mediaStatus ? `媒介：${mediaStatus}` : "",
+    ].filter(Boolean).slice(0, 6),
+  };
 }
 
 function renderClaimSplit(claimPlan = {}) {

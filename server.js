@@ -680,7 +680,7 @@ function retrievalDecision(stage, state, input, queries) {
     if (!highImpact && !academicNeed && !mediaNeed && !hasConflict && enoughStrong && state.confidence >= 78) {
       return { action: "stop", reason: "快速阶段已找到足够独立强来源，停止扩展以节省检索成本" };
     }
-    return { action: "continue", reason: highImpact || academicNeed || mediaNeed ? "高影响 / 学术 / 媒介 claim 需要更深交叉验证" : "快速阶段证据密度不足，进入标准交叉验证" };
+    return { action: "continue", reason: highImpact || academicNeed || mediaNeed ? "高影响 / 学术 / 媒介信息需要更深交叉验证" : "快速阶段证据密度不足，进入标准交叉验证" };
   }
 
   if (stage === "standard") {
@@ -691,7 +691,7 @@ function retrievalDecision(stage, state, input, queries) {
       return { action: "continue", reason: "仅命中背景来源，没有形成支持或反证，继续扩展检索" };
     }
     if (state.confidence < 62 || hasConflict || highImpact || academicNeed) {
-      return { action: "continue", reason: hasConflict ? "支持与反证并存，扩展反证和专项渠道" : "证据仍不足或 claim 风险较高，继续扩展检索" };
+      return { action: "continue", reason: hasConflict ? "支持与反证并存，扩展反证和专项渠道" : "证据仍不足或信息风险较高，继续扩展检索" };
     }
     return { action: "stop", reason: "标准阶段达到可用置信度，停止额外检索" };
   }
@@ -1007,18 +1007,18 @@ function detectAcademicNeed(input) {
     return { needed: true, category: "academic", reason: "输入包含论文 / 期刊 / DOI / 学术平台信号" };
   }
   if (/(医疗|医学|疾病|症状|诊断|治疗|疗效|药物|药品|疫苗|临床|试验|副作用|不良反应|感染|病毒|细菌|癌症|肿瘤|糖尿病|高血压|心脏病|心血管|抑郁|阿尔茨海默|新冠|covid|vaccine|clinical trial|randomized|placebo|drug|medicine|therapy|cancer|diabetes|hypertension|virus|infection)/i.test(text)) {
-    return { needed: true, category: "medical", reason: "识别为医疗 / 药物 / 疾病类 claim" };
+    return { needed: true, category: "medical", reason: "识别为医疗 / 药物 / 疾病类信息" };
   }
   if (/(营养|保健品|维生素|蛋白粉|咖啡|饮酒|吸烟|减肥|肥胖|饮食|膳食|nutrition|supplement|vitamin|coffee|caffeine|alcohol|smoking|weight loss|obesity|diet)/i.test(text)) {
-    return { needed: true, category: "nutrition", reason: "识别为营养 / 生活方式健康类 claim" };
+    return { needed: true, category: "nutrition", reason: "识别为营养 / 生活方式健康类信息" };
   }
   if (/(研究发现|论文|期刊|同行评议|实验|样本量|显著性|meta.?analysis|systematic review|peer.?review|journal|paper|study finds|researchers found|preprint|retraction)/i.test(text)) {
     return { needed: true, category: "academic", reason: "文本声称来自研究或论文" };
   }
   if (/(气候变化|全球变暖|温室气体|碳排放|超导|量子|材料|基因编辑|crispr|climate change|global warming|greenhouse gas|superconduct|quantum|gene editing)/i.test(text)) {
-    return { needed: true, category: "science", reason: "识别为科学研究类 claim" };
+    return { needed: true, category: "science", reason: "识别为科学研究类信息" };
   }
-  return { needed: false, category: "general", reason: "未识别科学 / 医疗 / 论文类 claim，跳过学术渠道" };
+  return { needed: false, category: "general", reason: "未识别科学 / 医疗 / 论文类信息，跳过学术渠道" };
 }
 
 async function fetchDirectUrl(url) {
@@ -1459,7 +1459,7 @@ function buildChannelScores(results, input, localSignals) {
   if (academic && !localSignals.needsAcademicEvidence && academic.status === "未命中") {
     academic.status = "跳过";
     academic.role = "按需验证";
-    academic.note = localSignals.academicReason || "未识别科学 / 医疗 / 论文类 claim，跳过学术渠道";
+    academic.note = localSignals.academicReason || "未识别科学 / 医疗 / 论文类信息，跳过学术渠道";
     channelMap.set("academicEvidence", academic);
   }
 
@@ -1482,6 +1482,8 @@ function buildReport(input, localSignals, evidence, bundle) {
   const cap = calculateCap(input, localSignals, evidence);
   const finalScore = Math.round(Math.min(rawScore, cap.value));
   const verdict = verdictFor(finalScore);
+  const evidenceRows = buildEvidenceRows(input, localSignals, evidence);
+  const riskRows = buildRiskRows(input, localSignals, evidence, bundle);
 
   return {
     url: input.url,
@@ -1497,8 +1499,9 @@ function buildReport(input, localSignals, evidence, bundle) {
     finalScore,
     cap,
     verdict,
-    evidence: buildEvidenceRows(input, localSignals, evidence),
-    risks: buildRiskRows(input, localSignals, evidence, bundle),
+    analysisSummary: buildAnalysisSummary(input, localSignals, evidence, bundle, angleScores, finalScore, cap, verdict, evidenceRows, riskRows),
+    evidence: evidenceRows,
+    risks: riskRows,
     sources: buildSourceRows(evidence),
     channels: evidence.channels,
     links: buildReportLinks(evidence),
@@ -1581,9 +1584,85 @@ function calculateCap(input, localSignals, evidence) {
   return caps.sort((a, b) => a.value - b.value)[0];
 }
 
+function buildAnalysisSummary(input, localSignals, evidence, bundle, angleScores, finalScore, cap, verdict, evidenceRows = [], riskRows = []) {
+  const supportCount = evidence.supporting.length;
+  const refuteCount = evidence.refuting.length;
+  const hitChannels = evidence.channels.filter((channel) => channel.status === "已命中");
+  const strongChannels = hitChannels.filter((channel) => channel.score >= 75);
+  const topAngles = Object.entries(angleScores)
+    .sort((a, b) => b[1].score - a[1].score)
+    .slice(0, 2)
+    .map(([key, item]) => `${angleLabel(key)} ${item.score}%`);
+  const weakAngles = Object.entries(angleScores)
+    .sort((a, b) => a[1].score - b[1].score)
+    .slice(0, 2)
+    .map(([key, item]) => `${angleLabel(key)} ${item.score}%`);
+
+  let lead = `本次验证给出 ${finalScore}%（${verdict.label}）。`;
+  if (supportCount && !refuteCount) {
+    lead += ` 系统找到 ${supportCount} 条支持证据，暂未发现强反证。`;
+  } else if (supportCount && refuteCount) {
+    lead += ` 系统同时找到 ${supportCount} 条支持证据和 ${refuteCount} 条反向线索，需要重点看时间、语义和来源链。`;
+  } else if (!supportCount && refuteCount) {
+    lead += ` 系统未找到可靠支持证据，但发现 ${refuteCount} 条反向线索。`;
+  } else {
+    lead += localSignals.specificNamedEvent
+      ? " 这是一个具体人物 / 机构事件，但没有找到直接支持证据，因此被压到低可信区间。"
+      : " 系统没有找到可以直接支撑原信息的独立证据，结论应保持谨慎。";
+  }
+
+  if (strongChannels.length) lead += ` 较强的渠道信号来自 ${strongChannels.slice(0, 3).map((channel) => channel.label).join("、")}。`;
+  else if (hitChannels.length) lead += ` 目前命中的多为背景渠道，还不足以单独证明原信息。`;
+
+  if (cap.value < 100) lead += ` 当前总分受到“${cap.note}”封顶限制。`;
+  if (localSignals.mediaIntegrity?.hasMedia) lead += ` 上传素材的媒介完整性结论为：${localSignals.mediaIntegrity.status}。`;
+
+  const points = [];
+  points.push(`支持证据 ${supportCount} 条`);
+  points.push(`反向线索 ${refuteCount} 条`);
+  points.push(`命中渠道 ${hitChannels.length} 个`);
+  if (bundle.retrievalPlan?.savedJobs) points.push(`节省检索 ${bundle.retrievalPlan.savedJobs} 项`);
+  if (evidence.duplicateClusters?.length) points.push(`同源聚类 ${evidence.duplicateClusters.length} 组`);
+  if (input.claimPlan?.activeClaims?.length) points.push(`关键判断点 ${input.claimPlan.activeClaims.length} 个`);
+  if (topAngles.length) points.push(`强项：${topAngles.join(" / ")}`);
+  if (weakAngles.length) points.push(`弱项：${weakAngles.join(" / ")}`);
+
+  const riskText = riskRows
+    .filter((row) => row?.[2] === "-")
+    .slice(0, 2)
+    .map((row) => row[1])
+    .join("；");
+  const recommendation = finalScore >= 75
+    ? "整体可以作为较高可信线索使用，但仍建议保留关键证据链接。"
+    : finalScore >= 60
+      ? "整体可作为待确认信息参考，最好继续补充官方或原始来源。"
+      : finalScore >= 45
+        ? "整体证据不足或存在冲突，不建议作为确定事实传播。"
+        : "整体偏低可信，除非后续出现原始文件、官方声明或多家独立报道，否则不建议采信。";
+
+  return {
+    score: finalScore,
+    verdict: verdict.label,
+    text: `${lead}${riskText ? ` 主要可疑点是：${riskText}。` : ""} ${recommendation}`,
+    points: unique(points).slice(0, 8),
+  };
+}
+
+function angleLabel(key) {
+  return {
+    web: "联网检索",
+    logic: "逻辑",
+    history: "历史",
+    sourceChain: "来源链",
+    realWorld: "现实旁证",
+    stats: "统计",
+    integrity: "媒介完整性",
+  }[key] || key;
+}
+
 function buildEvidenceRows(input, localSignals, evidence) {
   const rows = [];
-  if (localSignals.shortAtomicClaim) rows.push(["中性", "短句已识别为可验证原子 claim", "+"]);
+  if (localSignals.shortAtomicClaim) rows.push(["中性", "短句已识别为可直接核验的信息", "+"]);
   if (localSignals.englishNetworkEnabled) rows.push(["中性", `已启用英语信息网络交叉验证：${localSignals.englishConcepts.slice(0, 5).join(", ") || "通用英语检索"}`, "+"]);
   if (localSignals.analysisClaim && evidence.supporting.length) rows.push(["支持", "分析型报道：按同一事件链 / 政策背景做语义交叉支持", "+"]);
   const contextSignal = aggregateContextSignal(evidence.all);
@@ -1619,10 +1698,10 @@ function buildRiskRows(input, localSignals, evidence, bundle) {
   const rows = [];
   const strongChannels = evidence.channels.filter((channel) => channel.status === "已命中" && channel.score >= 75);
   const externalEvidence = evidence.all.filter((item) => !item.inputSourceCluster);
-  if (input.impact === "high" && strongChannels.length < 2) rows.push(["交叉", "高影响 claim 缺少两个强验证渠道", "-"]);
+  if (input.impact === "high" && strongChannels.length < 2) rows.push(["交叉", "高影响信息缺少两个强验证渠道", "-"]);
   if (!evidence.supporting.length) rows.push(["检索", localSignals.specificNamedEvent ? "具体人物 / 机构事件未找到直接支持，降为低可信" : "未找到支持证据，保持待验证", "-"]);
   const academicChannel = evidence.channels.find((channel) => channel.id === "academicEvidence");
-  if (localSignals.needsAcademicEvidence && academicChannel?.status !== "已命中") rows.push(["学术", "该类 claim 需要学术论文、指南或注册试验辅助验证", "-"]);
+  if (localSignals.needsAcademicEvidence && academicChannel?.status !== "已命中") rows.push(["学术", "该类信息需要学术论文、指南或注册试验辅助验证", "-"]);
   if (localSignals.analysisClaim && !externalEvidence.some((item) => item.contextScore >= 55)) rows.push(["上下文", "未找到足够的同主体 / 同事件链 / 同政策背景证据", "-"]);
   if (evidence.duplicateClusters?.length) rows.push(["同源", `发现 ${evidence.duplicateClusters.length} 组同源转载，已去重并只按代表来源计分`, "0"]);
   if (evidence.refuting.length) rows.push(["冲突", `发现 ${evidence.refuting.length} 条疑似反证或旧反证`, "-"]);
@@ -1776,7 +1855,7 @@ function buildAiCommitteeReview(input, localSignals, evidence, angleScores, fina
       role: "审查来源链和引用身份",
       score: clamp(42 + (hasPrimary ? 22 : 0) + strongSources.length * 6 + channelHits.length * 3 - (localSignals.anonymous ? 12 : 0)),
       basis: strongSources[0] ? `${strongSources.length} 个 T0-T2 来源，最高 ${strongSources[0].tier}` : "暂未命中 T0-T2 强来源",
-      concern: hasPrimary ? "已出现原始或官方来源，仍需确认上下文是否支持原 claim" : "来源链仍需追到原始发布者",
+      concern: hasPrimary ? "已出现原始或官方来源，仍需确认上下文是否支持原信息" : "来源链仍需追到原始发布者",
       action: "优先复核官方文件、原始公告、完整访谈文本",
     }),
     committeeAgent({
@@ -1801,7 +1880,7 @@ function buildAiCommitteeReview(input, localSignals, evidence, angleScores, fina
       score: input.media.length ? localSignals.mediaIntegrity.score : 58,
       basis: input.media.length ? `${input.media.length} 个上传素材 · ${localSignals.mediaIntegrity.status}` : "本次未上传图片或视频素材",
       concern: input.media.length ? (localSignals.mediaIntegrity.suspiciousSignals[0] || "仍需反向图片搜索、关键帧和地理定位") : "无媒介证据，无法进行 PS / AI 生成检测",
-      action: input.media.length ? "补充 EXIF/C2PA、ELA、AI 检测、多引擎反搜和地理定位" : "如 claim 依赖截图或视频，应补充原始素材",
+      action: input.media.length ? "补充 EXIF/C2PA、ELA、AI 检测、多引擎反搜和地理定位" : "如原信息依赖截图或视频，应补充原始素材",
     }),
   ];
 

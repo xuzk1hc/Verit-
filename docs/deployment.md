@@ -4,7 +4,7 @@ Verité 是一个后端渲染静态前端的 Node 服务，并可选启动本地
 
 ## 推荐方案：Render
 
-1. 把 `Chek` 目录推到 GitHub 仓库。
+1. 把 `Verite` 目录推到 GitHub 仓库。
 2. 打开 Render，选择 `New` -> `Blueprint`。
 3. 选择仓库，Render 会读取 `render.yaml`。
 4. 创建服务后等待构建完成。
