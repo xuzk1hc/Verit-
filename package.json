@@ -1,0 +1,11 @@
+{
+  "name": "verite",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "start:media-ai": "python tools/media_ai_service.py",
+    "check": "node --check server.js && node --check src/app.js"
+  }
+}

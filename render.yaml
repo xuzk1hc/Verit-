@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: verite
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: VERITE_MEDIA_AI
+        value: "1"
+      - key: VERITE_MEDIA_AI_URL
+        value: http://127.0.0.1:8790/analyze

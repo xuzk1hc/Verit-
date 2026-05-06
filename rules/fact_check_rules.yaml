@@ -1,0 +1,582 @@
+version: 2
+name: verite_fact_check_rules
+description: >
+  Multi-angle verification rules for user-uploaded text, images, videos,
+  screenshots, and news links. Each case is decomposed into atomic claims and
+  scored from web search, logical consistency, historical review, source-chain
+  tracing, real-world corroboration, statistical anomaly analysis, and content
+  or media integrity. Post-verification is handled as a separate mechanism, not
+  as a scoring angle.
+
+score_profiles:
+  default_event_claim:
+    web_search_verification_weight: 0.22
+    logical_consistency_weight: 0.15
+    historical_review_weight: 0.10
+    source_chain_tracing_weight: 0.15
+    real_world_corroboration_weight: 0.15
+    statistical_anomaly_and_base_rate_weight: 0.08
+    content_and_media_integrity_weight: 0.15
+  data_claim:
+    web_search_verification_weight: 0.18
+    logical_consistency_weight: 0.14
+    historical_review_weight: 0.10
+    source_chain_tracing_weight: 0.14
+    real_world_corroboration_weight: 0.18
+    statistical_anomaly_and_base_rate_weight: 0.20
+    content_and_media_integrity_weight: 0.06
+  statement_or_quote_claim:
+    web_search_verification_weight: 0.30
+    logical_consistency_weight: 0.10
+    historical_review_weight: 0.08
+    source_chain_tracing_weight: 0.22
+    real_world_corroboration_weight: 0.08
+    statistical_anomaly_and_base_rate_weight: 0.04
+    content_and_media_integrity_weight: 0.18
+
+claim_decomposition:
+  inspiration: Loki
+  steps:
+    - split_long_input_into_atomic_claim_candidates
+    - decontextualize_title_or_sentence_with_source_context
+    - score_check_worthiness
+    - classify_claim_kind
+    - select_high_priority_claims_for_retrieval
+  worthiness_boosts:
+    named_entities_or_institutions: 10
+    dates_numbers_or_time_signals: 10
+    concrete_actions_or_official_statements: 18
+    high_impact_case: 5
+  worthiness_penalties:
+    speculative_language: -8
+    pure_question_or_opinion: -18
+
+adaptive_retrieval_budget:
+  inspiration: FIRE
+  stages:
+    - name: quick_positioning
+      purpose: direct_url_top_news_top_english_counter_queries
+    - name: standard_cross_verification
+      purpose: more_news_gdelt_official_real_world_counter_and_academic_if_needed
+    - name: expanded_refutation_and_special_channels
+      purpose: social_self_media_extra_counter_academic_and_long_tail_channels
+  stop_rules:
+    quick_stop: independent_strong_sources_without_conflict_for_low_or_medium_impact
+    standard_stop: evidence_converged_and_no_academic_or_conflict_need
+  continue_rules:
+    - high_impact_claim
+    - academic_or_medical_claim
+    - media_dependent_claim
+    - support_and_refutation_conflict
+    - insufficient_source_diversity
+
+short_atomic_claim_handling:
+  description: >
+    Short user inputs can be complete, verifiable atomic claims. Do not treat
+    them as insufficient merely because they are short when they contain clear
+    entities and an action.
+  detection:
+    minimum_compact_length: 4
+    maximum_compact_length: 80
+    requires:
+      - entity_signal
+      - action_signal
+    entity_signal_examples:
+      - uppercase_acronyms
+      - country_names
+      - company_names
+      - organization_names
+    action_signal_examples:
+      - withdraw
+      - leave
+      - announce
+      - sanction
+      - acquire
+      - resign
+      - launch
+  scoring_behavior:
+    no_information_insufficient_cap: true
+    default_status_without_backend: 待联网交叉验证
+    high_impact_cap_before_cross_channel_search: 69
+    required_next_step: generate_search_queries_and_fetch_cross_channel_evidence
+
+verdict_thresholds:
+  confirmed:
+    range: [90, 100]
+    label_zh: 已确认
+    usage: 可作为强事实引用
+  high_confidence:
+    range: [75, 89]
+    label_zh: 高可信
+    usage: 可引用，但需保留主要不确定性
+  medium_confidence:
+    range: [60, 74]
+    label_zh: 中等可信
+    usage: 可进入分析，但不能单独支撑高影响结论
+  insufficient_or_conflicting:
+    range: [45, 59]
+    label_zh: 证据不足 / 冲突
+    usage: 只进入待核查或情景讨论
+  low_confidence:
+    range: [25, 44]
+    label_zh: 低可信
+    usage: 不建议采信，只记录为传言
+  refuted:
+    range: [0, 24]
+    label_zh: 基本不实 / 已反证
+    usage: 不采信，保留反证链
+
+web_search_verification:
+  description: >
+    Verifies whether reliable, independent, and traceable evidence or refuting
+    evidence exists across multiple online and offline-adjacent channels:
+    news media, internet platforms, self-media/KOLs, authoritative statements,
+    primary records/databases, real-world corroboration, and uploaded media.
+    Identity and quote verification plus propagation network analysis are
+    included in this angle.
+  formula:
+    source_reliability: 0.22
+    cross_channel_coverage: 0.28
+    cross_channel_consistency_or_conflict: 0.20
+    identity_and_quote_verification: 0.15
+    propagation_network_analysis: 0.10
+    recency_and_context_completeness: 0.05
+  channel_matrix:
+    news_media:
+      role: cross_reporting
+      default_reliability: medium_high
+      verification_focus:
+        - independent_reporting
+        - original_links
+        - non_circular_sourcing
+    internet_platforms:
+      role: propagation_eyewitness_field_signal
+      default_reliability: low_to_medium
+      verification_focus:
+        - multi_account_multiview_evidence
+        - verified_identity
+        - bot_or_coordinated_distribution_risk
+    self_media_kol:
+      role: lead_context_or_early_tip
+      default_reliability: low_to_medium
+      verification_focus:
+        - historical_accuracy
+        - conflict_of_interest
+        - verifiable_materials_provided
+    authoritative_statement:
+      role: official_or_actor_statement
+      default_reliability: high
+      verification_focus:
+        - authentic_identity
+        - original_context
+        - separate_statement_existence_from_statement_truth
+    primary_records_databases:
+      role: primary_or_structured_evidence
+      default_reliability: very_high
+      verification_focus:
+        - document_id
+        - publication_time
+        - reproducible_database_record
+    real_world_corroboration:
+      role: external_trace
+      default_reliability: medium_high
+      verification_focus:
+        - permits_tenders_flights_satellite_registry_market_hospital_or_local_records
+        - time_place_quantity_match
+    uploaded_media:
+      role: visual_or_field_evidence
+      default_reliability: variable
+      verification_focus:
+        - reverse_search
+        - metadata
+        - geolocation
+        - ai_ps_deepfake_detection
+  channel_rules:
+    minimum_effective_cross_check: "At least 2 independent channel types agree."
+    high_impact_preferred_channels: "At least 2 among news_media, authoritative_statement, primary_records_databases, real_world_corroboration."
+    weak_channel_limit: "Internet platforms, self-media, screenshots, and short videos are lead signals unless supported by stronger channels."
+    conflict_handling: "List channel conflicts explicitly; do not average conflicting channels into a neutral score."
+  counter_evidence_search:
+    enabled: true
+    description: "Generate active refutation queries instead of only detecting contradictions inside ordinary search results."
+    query_terms:
+      en:
+        - false
+        - hoax
+        - fake
+        - denied
+        - no plan
+        - not leaving
+        - fact check
+        - debunked
+        - correction
+        - retraction
+      zh:
+        - 否认
+        - 辟谣
+        - 更正
+        - 撤稿
+        - 不退出
+        - 谣言
+        - 假的
+    scoring:
+      keep_separate_from_supporting_evidence: true
+      authoritative_refutation_cap: 20
+      show_conflict_when_support_and_refutation_coexist: true
+  source_tiers:
+    T0:
+      label: official_primary
+      score_range: [90, 100]
+      examples:
+        - official filings
+        - regulator notices
+        - court records
+        - company official announcements
+        - original government or exchange datasets
+    T1:
+      label: authoritative_structured_or_wire
+      score_range: [80, 89]
+      examples:
+        - Reuters
+        - Bloomberg
+        - official databases
+        - industry associations with methodology
+        - exchange and procurement platforms
+    T2:
+      label: reputable_editorial_media
+      score_range: [68, 82]
+      examples:
+        - BBC
+        - New York Times
+        - Financial Times
+        - Wall Street Journal
+        - Caixin
+      note: High editorial quality is a starting point; anonymous sourcing or lack of primary evidence downgrades the claim.
+    T3:
+      label: specialist_local_or_expert_context
+      score_range: [50, 67]
+      examples:
+        - vertical media
+        - local media
+        - expert interviews
+        - company blogs
+        - podcasts and conference remarks
+    T4:
+      label: social_or_forum_signal
+      score_range: [20, 55]
+      examples:
+        - X
+        - Facebook
+        - Instagram
+        - Reddit
+        - Weibo
+        - forums
+        - KOL posts
+    T5:
+      label: unattributed_or_unusable
+      score_range: [0, 25]
+      examples:
+        - unsourced screenshots
+        - SEO aggregators
+        - AI content farms
+        - unverifiable reposts
+  identity_and_quote_checks:
+    - verify_account_or_institution_identity
+    - find_original_statement_interview_video_transcript_or_filing
+    - compare_translation_with_original_language
+    - separate_statement_existence_from_statement_truth
+    - detect_quote_truncation_context_loss_or_semantic_reversal
+  propagation_network_checks:
+    - identify_copy_paste_bursts
+    - detect_bot_pr_campaign_or_coordinated_inauthentic_behavior
+    - map_cross_platform_timestamps
+    - distinguish_organic_spread_from_matrix_distribution
+    - detect_social_to_media_to_social_circular_validation
+  positive_adjustments:
+    linked_primary_document: 10
+    named_primary_source: 8
+    original_dataset_or_raw_media_available: 8
+    two_or_more_independent_sources: 12
+    reporter_or_source_history_reliable: 5
+    verified_account_for_own_statement: 8
+    multiple_independent_eyewitness_media: 12
+    celebrity_or_public_figure_interaction: 5
+    high_social_engagement: 3
+    independent_multiplatform_signal: 10
+  negative_adjustments:
+    anonymous_source_only: -12
+    speculative_or_conditional_language: -10
+    no_primary_link: -8
+    circular_reposting: -12
+    conflict_of_interest: -8
+    unclear_timestamp: -8
+    contradicted_by_authoritative_source: -40
+    screenshot_without_original_post: -20
+    quote_context_reversal: -30
+    coordinated_copy_paste_distribution: -20
+  caps:
+    only_single_social_platform_source: 49
+    only_verified_public_figure_repost_without_other_evidence: 55
+    social_screenshot_without_original_post: 35
+    high_impact_without_independent_corroboration: 69
+    same_original_source_reposted_by_many_outlets: 55
+    original_quote_unavailable: 65
+    quote_context_reversed: 45
+    authoritative_source_directly_refuted: 20
+
+logical_consistency:
+  description: >
+    Tests whether the claim fits known timelines, incentives, capabilities,
+    causal chains, concurrent events, and counterfactual expectations.
+  formula:
+    timeline_consistency: 0.22
+    actor_incentive_alignment: 0.18
+    capability_and_resource_feasibility: 0.18
+    causal_chain_integrity: 0.17
+    compatibility_with_concurrent_events: 0.15
+    counterfactual_check: 0.10
+  counterfactual_checks:
+    - define_expected_traces_if_claim_true
+    - check_absence_or_presence_of_expected_announcements_transactions_prices_records_or_field_signals
+    - evaluate_whether_missing_expected_evidence_has_reasonable_explanation
+  negative_adjustments:
+    reversed_or_impossible_timeline: [-20, -50]
+    major_resource_claim_without_trace: [-15, -35]
+    causal_jump_without_evidence: [-10, -25]
+    strong_actor_incentive_to_mislead: [-5, -20]
+    missing_counterfactual_expected_evidence: [-10, -35]
+    conflicts_with_multiple_confirmed_facts: [-30, -70]
+
+historical_review:
+  description: >
+    Compares the current claim with similar past events, historical falsehood
+    patterns, source accuracy, and actor behavior.
+  formula:
+    similar_event_historical_outcome: 0.35
+    misinformation_pattern_match: 0.25
+    source_historical_accuracy: 0.25
+    actor_historical_behavior: 0.15
+  scoring_guidance:
+    frequent_real_analogue_and_strong_current_evidence: [75, 95]
+    plausible_but_needs_confirmation: [55, 74]
+    often_misreported_or_promotional: [35, 54]
+    matches_known_hoax_pattern: [0, 34]
+
+source_chain_tracing:
+  description: >
+    Traces the earliest known origin and subsequent reposting, rewriting,
+    translation, and cross-platform spread of the information.
+  formula:
+    earliest_confirmed_origin: 0.35
+    original_vs_repost_clarity: 0.25
+    cross_platform_timeline_consistency: 0.20
+    auditability_of_source_chain: 0.20
+  checks:
+    - identify_earliest_known_publication_time
+    - identify_first_account_media_or_document
+    - distinguish_original_reporting_from_reposts_or_wire_copy
+    - inspect_archives_rss_platform_ids_and_snapshots
+    - detect_translation_summary_or_screenshot_distortion
+  caps:
+    no_original_source_only_multilevel_reposts: 55
+    broken_chain_with_screenshot_as_key_evidence: 35
+    anonymous_origin_without_independent_evidence: 45
+    complete_T0_or_T1_origin_chain: 100
+
+real_world_corroboration:
+  description: >
+    Checks whether the claim leaves independently verifiable traces in the real
+    world, such as official records, logistics, physical evidence, market
+    reactions, or local signals.
+  formula:
+    official_or_structured_records: 0.35
+    physical_and_logistical_traces: 0.25
+    market_and_institutional_reactions: 0.20
+    local_independent_signals: 0.20
+  evidence_examples:
+    business_industry:
+      - corporate registry changes
+      - tender or procurement records
+      - hiring records
+      - patents
+      - customs or shipping data
+      - satellite imagery
+      - permits and environmental approvals
+    policy_regulatory:
+      - government gazettes
+      - regulator databases
+      - court records
+      - sanctions lists
+      - parliamentary records
+    disaster_conflict:
+      - weather records
+      - seismology networks
+      - flight cancellations
+      - hospital notices
+      - local government bulletins
+      - satellite imagery
+    financial_markets:
+      - stock or bond movements
+      - options volume
+      - exchange announcements
+      - rating agency actions
+  adjustments:
+    independent_hard_trace_present: [10, 25]
+    major_event_expected_traces_absent: [-15, -40]
+    only_self_claim_without_external_trace: [-10, -25]
+    side_evidence_time_place_or_quantity_mismatch: [-15, -45]
+
+statistical_anomaly_and_base_rate:
+  description: >
+    Tests whether the claim's frequency, magnitude, growth rate, or data
+    distribution is plausible, and whether abnormal claims have sufficiently
+    strong evidence.
+  formula:
+    comparable_event_base_rate: 0.30
+    magnitude_plausibility: 0.25
+    distribution_outlier_check: 0.20
+    metric_definition_consistency: 0.15
+    uncertainty_range_expression: 0.10
+  checks:
+    - compare_with_historical_frequency
+    - compare_with_capacity_budget_population_or_physical_limits
+    - detect_extreme_growth_rate_price_vote_casualty_or_market_size_outliers
+    - normalize_units_geography_currency_period_and_tax_treatment
+    - detect_percentage_vs_percentage_point_confusion
+    - detect_sample_selection_or_survivorship_bias
+  scoring_guidance:
+    within_historical_range_and_data_supported: [80, 100]
+    abnormal_but_explained_and_corroborated: [60, 79]
+    highly_abnormal_with_ordinary_evidence: [35, 59]
+    nearly_impossible_or_metric_definition_wrong: [0, 34]
+  caps:
+    materially_abnormal_without_strong_evidence: 59
+
+content_and_media_integrity:
+  description: >
+    Merges image/video authenticity checks, narrative and language risk, and
+    version evolution or deletion records.
+  formula:
+    original_artifact_integrity: 0.15
+    technical_authenticity_detection: 0.25
+    old_media_or_old_text_reuse_check: 0.15
+    narrative_structure_and_language_risk: 0.20
+    version_evolution_and_edit_records: 0.20
+    interface_and_format_consistency: 0.05
+  media_checks:
+    - hash_original_file
+    - preserve_upload_metadata
+    - extract_exif_xmp_iptc_icc_or_container_metadata
+    - scan_and_verify_c2pa_content_credentials_when_available
+    - generate_lightweight_image_preview_for_forensics
+    - extract_video_keyframes_for_per_frame_analysis
+    - reverse_image_search
+    - keyframe_reverse_video_search
+    - inspect_lighting_shadows_reflections_perspective
+    - inspect_text_logos_license_plates_and_landmarks
+    - inspect_compression_noise_edges_ela_jpeg_ghosts_and_clone_patterns
+    - check_video_timeline_and_keyframe_consistency
+    - run_ai_generation_and_deepfake_detectors_as_supporting_signals
+    - compare_weather_sun_angle_events_and_location_records
+  narrative_language_risk_checks:
+    - emotionally_extreme_or_inflammatory_language
+    - vague_authority_without_original_source
+    - headline_certainty_body_speculation_mismatch
+    - missing_verifiable_details
+    - screenshots_or_translated_summaries_substitute_for_links
+  version_evolution_checks:
+    - inspect_headline_body_image_timestamp_or_author_changes
+    - check_corrections_updates_editor_notes_retractions_or_deletions
+    - compare_archived_versions_rss_and_platform_edit_records
+    - detect_claim_strength_downgrade_between_versions
+  caps:
+    screenshot_without_original_file_or_url: 55
+    old_media_or_old_text_reused_for_new_claim: 25
+    strong_ai_or_ps_signal_with_visual_anomalies: 35
+    key_fact_retracted_or_silently_rewritten: 50
+    original_media_plus_multiview_plus_geolocation_match: 100
+
+forced_caps:
+  directly_refuted_by_T0_source: 20
+  only_untraceable_screenshot: 35
+  high_impact_without_independent_corroboration: 69
+  only_single_social_media_evidence: 49
+  media_confirmed_as_different_time_place_or_event: 30
+  circular_source_chain_without_original_source: 55
+  prediction_or_opinion_not_fact: 74
+  materially_abnormal_statistical_claim_without_strong_evidence: 59
+  expected_real_world_traces_absent_without_explanation: 60
+
+post_verification_mechanism:
+  description: >
+    Independent follow-up mechanism. It does not count as a scoring angle.
+    It updates verdicts when new evidence, refutations, corrections, official
+    records, or platform actions appear.
+  review_schedule:
+    breaking_public_safety_war_disaster_financial_risk:
+      - 1h
+      - 6h
+      - 24h
+      - 72h
+      - 7d
+    policy_regulatory_sanction_legal:
+      - 24h
+      - 72h
+      - 7d
+      - 30d
+    corporate_mna_order_product_launch:
+      - 24h
+      - 72h
+      - 7d
+      - next_filing_or_earnings
+    low_impact_rumor_or_sentiment:
+      - 24h
+      - 7d
+      - archive_if_no_new_evidence
+  triggers:
+    - official_statement_or_filing
+    - correction_retraction_deletion_or_headline_change
+    - platform_fact_check_label_removal_or_distribution_limit
+    - new_primary_media_satellite_image_or_local_record
+    - strong_refuting_evidence
+    - material_change_in_key_number_location_or_timeline
+    - real_world_process_trace_such_as_permit_tender_payment_logistics_trial_or_earnings
+  required_review_output_fields:
+    - review_time
+    - previous_verdict
+    - updated_verdict
+    - score_delta
+    - new_supporting_evidence
+    - new_refuting_evidence
+    - change_reason
+    - user_notification_required
+    - next_review_time
+  learning_updates:
+    - update_source_historical_accuracy
+    - update_account_or_media_correction_retraction_record
+    - update_misinformation_pattern_library
+    - update_similar_event_library
+    - calibrate_angle_weights_against_later_outcomes
+
+required_output_fields:
+  - case_id
+  - claim_id
+  - claim_text
+  - final_verdict_label
+  - final_confidence_percent
+  - score_profile_used
+  - score_breakdown
+  - supporting_evidence
+  - refuting_evidence
+  - suspicious_points
+  - unresolved_questions
+  - source_list_with_tiers
+  - cross_channel_verification_summary
+  - source_chain_summary
+  - identity_and_quote_verification_summary
+  - propagation_network_summary
+  - real_world_corroboration_summary
+  - statistical_anomaly_summary
+  - content_and_media_integrity_summary
+  - post_verification_plan
+  - retrieved_at
