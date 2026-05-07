@@ -20,6 +20,27 @@ Render 会自动使用：
 
 默认 `render.yaml` 使用 `free` 实例，适合试用和小范围分享，但可能冷启动较慢。正式长期使用可以在 Render 控制台升级实例。
 
+## 可选：配置正式搜索 API
+
+Render 云端 IP 访问公开搜索网页时，可能遇到 403、超时或结果不稳定。建议在 Render 的 `Environment` 页面添加一个或多个正式搜索 API Key：
+
+```text
+BING_SEARCH_API_KEY=...
+GOOGLE_CSE_API_KEY=...
+GOOGLE_CSE_ID=...
+SERPAPI_KEY=...
+NEWSAPI_KEY=...
+```
+
+这些变量都可以留空。只要配置其中任意一个，Verité 后端就会在原有 Google News RSS、GDELT、DuckDuckGo、PubMed、Crossref 之外，额外调用对应正式 API，并把结果纳入同一套交叉验证评分。
+
+推荐优先级：
+
+1. `BING_SEARCH_API_KEY`：通用网页覆盖面较稳。
+2. `SERPAPI_KEY`：Google / Google News 结果质量较好，但通常是付费服务。
+3. `GOOGLE_CSE_API_KEY` + `GOOGLE_CSE_ID`：适合自定义搜索范围。
+4. `NEWSAPI_KEY`：适合补充英文新闻源。
+
 ## Docker / VPS
 
 在服务器上执行：
@@ -48,6 +69,11 @@ http://服务器公网IP:8787
 HOST=0.0.0.0
 VERITE_MEDIA_AI=1
 VERITE_MEDIA_AI_URL=http://127.0.0.1:8790/analyze
+BING_SEARCH_API_KEY=可选
+GOOGLE_CSE_API_KEY=可选
+GOOGLE_CSE_ID=可选
+SERPAPI_KEY=可选
+NEWSAPI_KEY=可选
 ```
 
 平台会提供自己的 `PORT`，Verité 会自动读取。

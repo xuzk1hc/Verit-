@@ -9,6 +9,11 @@ const HOST = process.env.HOST || "127.0.0.1";
 const AI_COMMITTEE_ENABLED = process.env.VERITE_AI_COMMITTEE === "1" || process.env.CHEK_AI_COMMITTEE === "1";
 const MEDIA_AI_ENABLED = process.env.VERITE_MEDIA_AI === "1";
 const MEDIA_AI_URL = process.env.VERITE_MEDIA_AI_URL || "http://127.0.0.1:8790/analyze";
+const BING_SEARCH_API_KEY = process.env.BING_SEARCH_API_KEY || "";
+const GOOGLE_CSE_API_KEY = process.env.GOOGLE_CSE_API_KEY || "";
+const GOOGLE_CSE_ID = process.env.GOOGLE_CSE_ID || "";
+const SERPAPI_KEY = process.env.SERPAPI_KEY || "";
+const NEWSAPI_KEY = process.env.NEWSAPI_KEY || "";
 const CURRENT_DATE = new Date("2026-04-29T00:00:00+08:00");
 const USER_AGENT = "Verite/0.2 (+local fact-check research tool)";
 
@@ -143,7 +148,7 @@ const englishNewsNetworkTerms = ["Reuters", "AP", "BBC", "Bloomberg", "Financial
 
 const crossLingualConcepts = [
   { id: "united_states", kind: "entity", triggers: [/美国|美方|白宫|华盛顿|united states|america|u\.?s\.?|white house|washington/i], terms: ["United States", "US", "America", "White House", "Washington"], patterns: [/united states|\bu\.s\.\b|\bus\b|america|american|white house|washington|美国|美方|白宫|华盛顿/i], domains: ["whitehouse.gov", "state.gov"] },
-  { id: "china", kind: "entity", triggers: [/中国|中方|北京|china|beijing/i], terms: ["China", "Beijing", "Chinese government"], patterns: [/china|chinese|beijing|中国|中方|北京/i], domains: ["gov.cn", "fmprc.gov.cn"] },
+  { id: "china", kind: "entity", triggers: [/中国|中方|北京|访华|访中|来华|赴华|china|beijing/i], terms: ["China", "Beijing", "Chinese government"], patterns: [/china|chinese|beijing|中国|中方|北京|访华|访中|来华|赴华/i], domains: ["gov.cn", "fmprc.gov.cn"] },
   { id: "united_kingdom", kind: "entity", triggers: [/英国|英方|伦敦|united kingdom|britain|u\.?k\.|london/i], terms: ["United Kingdom", "Britain", "UK", "London"], patterns: [/united kingdom|britain|british|\bu\.k\.\b|\buk\b|london|英国|英方|伦敦/i], domains: ["gov.uk", "parliament.uk"] },
   { id: "russia", kind: "entity", triggers: [/俄罗斯|俄方|莫斯科|russia|moscow/i], terms: ["Russia", "Moscow", "Kremlin"], patterns: [/russia|russian|moscow|kremlin|俄罗斯|俄方|莫斯科/i], domains: ["kremlin.ru"] },
   { id: "ukraine", kind: "entity", triggers: [/乌克兰|基辅|ukraine|kyiv|kiev/i], terms: ["Ukraine", "Kyiv"], patterns: [/ukraine|ukrainian|kyiv|kiev|乌克兰|基辅/i], domains: ["president.gov.ua"] },
@@ -164,7 +169,7 @@ const crossLingualConcepts = [
   { id: "trump", kind: "entity", triggers: [/特朗普|trump/i], terms: ["Donald Trump", "Trump"], patterns: [/donald trump|trump|特朗普/i] },
   { id: "musk", kind: "entity", triggers: [/马斯克|musk|elon/i], terms: ["Elon Musk", "Musk"], patterns: [/elon musk|musk|马斯克/i] },
   { id: "dario", kind: "entity", triggers: [/dario|达里奥|amodei/i], terms: ["Dario Amodei", "Anthropic"], patterns: [/dario amodei|anthropic|达里奥/i], domains: ["anthropic.com"] },
-  { id: "visit", kind: "action", triggers: [/访美|访问|国事访问|会见|会晤|抵达|visit|state visit|official visit|meet|arrive/i], terms: ["visit", "state visit", "official visit", "arrive", "host", "meet"], patterns: [/visit|visited|visiting|state visit|official visit|trip|arriv|welcome|host|meet|访问|访美|国事访问|抵达|欢迎|会晤|会见/i] },
+  { id: "visit", kind: "action", triggers: [/访华|访中|来华|赴华|访美|访问|国事访问|会见|会晤|抵达|visit|state visit|official visit|meet|arrive/i], terms: ["visit", "state visit", "official visit", "arrive", "host", "meet"], patterns: [/visit|visited|visiting|state visit|official visit|trip|arriv|welcome|host|meet|访问|访华|访中|来华|赴华|访美|国事访问|抵达|欢迎|会晤|会见/i] },
   { id: "announcement", kind: "action", triggers: [/宣布|公告|声明|发布|证实|确认|announce|announcement|statement|confirm/i], terms: ["announce", "announcement", "official statement", "confirmed"], patterns: [/announc|statement|declare|official|confirm|press release|宣布|公告|声明|发布|证实|确认/i] },
   { id: "resignation", kind: "action", triggers: [/辞职|卸任|离任|下台|resign|step down|quit/i], terms: ["resign", "step down", "resignation", "leave office"], patterns: [/resign|step down|resignation|leave office|辞职|卸任|离任|下台/i] },
   { id: "succession", kind: "action", triggers: [/任期|交接|继任|接棒|接任|换届|successor|succession|transition|term|replacement/i], terms: ["term ends", "term expires", "transition", "succession", "successor", "replacement"], patterns: [/term ends|term expires|chair term|successor|succession|succeed|replace|replacement|transition|handover|任期|交接|继任|接棒|接任|换届/i] },
@@ -555,18 +560,26 @@ function buildRetrievalJobSpecs(input, queries) {
   const gnews = (query, hint = "news") => job(hint === "news" ? "google_news_rss" : hint, query, () => searchGoogleNews(query, hint));
   const gdelt = (query, hint = "gdelt_news") => job(hint === "gdelt_news" ? "gdelt_news" : hint, query, () => searchGdelt(query, hint));
   const reddit = (query) => job("reddit", query, () => searchReddit(query));
+  const apiWeb = (query, hint = "web") => officialSearchApiJobs(query, hint, job);
+  const apiNews = (query, hint = "newsMedia") => newsSearchApiJobs(query, hint, job);
 
   const foundation = [];
   if (input.url) foundation.push(job("direct_url", input.url, () => fetchDirectUrl(input.url), 9000));
   for (const query of queries.primary.slice(0, 3)) {
+    foundation.push(...apiNews(query, "newsMedia"));
+    foundation.push(...apiWeb(query, "web"));
     foundation.push(gnews(query));
     foundation.push(ddg(query, "web"));
   }
   for (const query of queries.englishNetwork.slice(0, 2)) {
+    foundation.push(...apiNews(query, "english_network"));
+    foundation.push(...apiWeb(query, "english_network"));
     foundation.push(gnews(query, "english_network"));
     foundation.push(ddg(query, "english_network"));
   }
   for (const query of queries.counterEvidence.slice(0, 2)) {
+    foundation.push(...apiNews(query, "counter_evidence"));
+    foundation.push(...apiWeb(query, "counter_evidence"));
     foundation.push(gnews(query, "counter_evidence"));
     foundation.push(ddg(query, "counter_evidence"));
   }
@@ -574,18 +587,29 @@ function buildRetrievalJobSpecs(input, queries) {
 
   const standard = [];
   for (const query of queries.primary.slice(3, 7)) {
+    standard.push(...apiNews(query, "newsMedia"));
     standard.push(gnews(query));
     standard.push(gdelt(query));
     standard.push(ddg(query, "web"));
   }
   for (const query of queries.englishNetwork.slice(2, 5)) {
+    standard.push(...apiNews(query, "english_network"));
+    standard.push(...apiWeb(query, "english_network"));
     standard.push(gnews(query, "english_network"));
     standard.push(gdelt(query, "english_network"));
     standard.push(ddg(query, "english_network"));
   }
-  for (const query of queries.official.slice(0, 4)) standard.push(ddg(query, "official"));
-  for (const query of queries.realWorld.slice(0, 3)) standard.push(ddg(query, "real_world"));
+  for (const query of queries.official.slice(0, 4)) {
+    standard.push(...apiWeb(query, "official"));
+    standard.push(ddg(query, "official"));
+  }
+  for (const query of queries.realWorld.slice(0, 3)) {
+    standard.push(...apiWeb(query, "real_world"));
+    standard.push(ddg(query, "real_world"));
+  }
   for (const query of queries.counterEvidence.slice(2, 7)) {
+    standard.push(...apiNews(query, "counter_evidence"));
+    standard.push(...apiWeb(query, "counter_evidence"));
     standard.push(gnews(query, "counter_evidence"));
     standard.push(ddg(query, "counter_evidence"));
   }
@@ -595,18 +619,32 @@ function buildRetrievalJobSpecs(input, queries) {
   }
 
   const expanded = [];
-  for (const query of queries.primary.slice(7)) expanded.push(ddg(query, "web"));
+  for (const query of queries.primary.slice(7)) {
+    expanded.push(...apiWeb(query, "web"));
+    expanded.push(ddg(query, "web"));
+  }
   for (const query of queries.englishNetwork.slice(5)) {
+    expanded.push(...apiNews(query, "english_network"));
     expanded.push(gnews(query, "english_network"));
     expanded.push(ddg(query, "english_network"));
   }
-  for (const query of queries.official.slice(4)) expanded.push(ddg(query, "official"));
-  for (const query of queries.realWorld.slice(3)) expanded.push(ddg(query, "real_world"));
+  for (const query of queries.official.slice(4)) {
+    expanded.push(...apiWeb(query, "official"));
+    expanded.push(ddg(query, "official"));
+  }
+  for (const query of queries.realWorld.slice(3)) {
+    expanded.push(...apiWeb(query, "real_world"));
+    expanded.push(ddg(query, "real_world"));
+  }
   for (const query of queries.social) {
+    expanded.push(...apiWeb(query, "social"));
     expanded.push(ddg(query, "social"));
     expanded.push(reddit(query));
   }
-  for (const query of queries.selfMedia) expanded.push(ddg(query, "self_media"));
+  for (const query of queries.selfMedia) {
+    expanded.push(...apiWeb(query, "self_media"));
+    expanded.push(ddg(query, "self_media"));
+  }
   for (const query of queries.academic.slice(3)) {
     expanded.push(job("pubmed", query, () => searchPubMed(query)));
     expanded.push(job("crossref", query, () => searchCrossref(query)));
@@ -633,6 +671,21 @@ function dedupeJobSpecs(specs) {
     output.push(spec);
   }
   return output;
+}
+
+function officialSearchApiJobs(query, channelHint, job) {
+  const jobs = [];
+  if (BING_SEARCH_API_KEY) jobs.push(job(`bing_${channelHint}`, query, () => searchBingWeb(query, channelHint), 10000));
+  if (GOOGLE_CSE_API_KEY && GOOGLE_CSE_ID) jobs.push(job(`google_cse_${channelHint}`, query, () => searchGoogleCse(query, channelHint), 10000));
+  if (SERPAPI_KEY) jobs.push(job(`serpapi_${channelHint}`, query, () => searchSerpApi(query, channelHint), 12000));
+  return jobs;
+}
+
+function newsSearchApiJobs(query, channelHint, job) {
+  const jobs = [];
+  if (NEWSAPI_KEY) jobs.push(job(`newsapi_${channelHint}`, query, () => searchNewsApi(query, channelHint), 10000));
+  if (SERPAPI_KEY) jobs.push(job(`serpapi_news_${channelHint}`, query, () => searchSerpApiNews(query, channelHint), 12000));
+  return jobs;
 }
 
 function evaluateRetrievalState(raw, input) {
@@ -925,7 +978,8 @@ function expandClaimTerms(claim, englishContext = buildEnglishInformationContext
   if (/卡米拉|camilla/i.test(cleaned)) terms.push("Queen Camilla", "Camilla");
   if (/英王|英国国王|英国君主|国王|british monarch|king/i.test(cleaned)) terms.push("British monarch", "King");
   if (/美国|访美|白宫|华盛顿|united states|america|u\.?s\.?/i.test(cleaned)) terms.push("United States", "US", "America", "White House", "Washington");
-  if (/访美|访问|国事访问|visit|state visit|official visit/i.test(cleaned)) terms.push("visit", "state visit", "official visit", "arrive", "host");
+  if (/访华|访中|来华|赴华/i.test(cleaned)) terms.push("China", "Beijing", "visit China", "China visit", "official visit to China");
+  if (/访美|访华|访中|来华|赴华|访问|国事访问|visit|state visit|official visit/i.test(cleaned)) terms.push("visit", "state visit", "official visit", "arrive", "host");
   if (/鲍威尔|powell/i.test(cleaned)) terms.push("Jerome Powell", "Powell");
   if (/美联储|联邦储备|fed|federal reserve|fomc/i.test(cleaned)) terms.push("Federal Reserve", "Fed", "FOMC", "Fed chair");
   if (/沃什|warsh/i.test(cleaned)) terms.push("Kevin Warsh", "Warsh");
@@ -1102,6 +1156,110 @@ async function searchReddit(query) {
         query,
       });
     }),
+  };
+}
+
+async function searchBingWeb(query, channelHint = "web") {
+  const params = new URLSearchParams({ q: query, count: "10", mkt: "en-US", responseFilter: "Webpages,News" });
+  const url = `https://api.bing.microsoft.com/v7.0/search?${params.toString()}`;
+  const json = await fetchJson(url, { "Ocp-Apim-Subscription-Key": BING_SEARCH_API_KEY });
+  const webPages = json?.webPages?.value || [];
+  const news = json?.news?.value || [];
+  return {
+    results: [...webPages, ...news].slice(0, 14).map((item) =>
+      normalizeResult({
+        title: item.name,
+        url: item.url,
+        snippet: item.snippet || item.description,
+        publishedAt: item.datePublished,
+        sourceName: item.provider?.[0]?.name || hostname(item.url),
+        connector: "bing_search_api",
+        channelHint,
+        query,
+      }),
+    ),
+  };
+}
+
+async function searchGoogleCse(query, channelHint = "web") {
+  const params = new URLSearchParams({ key: GOOGLE_CSE_API_KEY, cx: GOOGLE_CSE_ID, q: query, num: "10" });
+  const url = `https://www.googleapis.com/customsearch/v1?${params.toString()}`;
+  const json = await fetchJson(url);
+  const items = Array.isArray(json?.items) ? json.items : [];
+  return {
+    results: items.slice(0, 10).map((item) =>
+      normalizeResult({
+        title: item.title,
+        url: item.link,
+        snippet: item.snippet || item.htmlSnippet,
+        sourceName: item.displayLink,
+        connector: "google_custom_search",
+        channelHint,
+        query,
+      }),
+    ),
+  };
+}
+
+async function searchSerpApi(query, channelHint = "web") {
+  const params = new URLSearchParams({ engine: "google", q: query, api_key: SERPAPI_KEY, num: "10", hl: "en", gl: "us" });
+  const url = `https://serpapi.com/search.json?${params.toString()}`;
+  const json = await fetchJson(url);
+  const organic = Array.isArray(json?.organic_results) ? json.organic_results : [];
+  return {
+    results: organic.slice(0, 10).map((item) =>
+      normalizeResult({
+        title: item.title,
+        url: item.link,
+        snippet: item.snippet || item.rich_snippet?.top?.detected_extensions?.join(" "),
+        sourceName: item.source || hostname(item.link),
+        connector: "serpapi_google",
+        channelHint,
+        query,
+      }),
+    ),
+  };
+}
+
+async function searchSerpApiNews(query, channelHint = "newsMedia") {
+  const params = new URLSearchParams({ engine: "google_news", q: query, api_key: SERPAPI_KEY, num: "10", hl: "en", gl: "us" });
+  const url = `https://serpapi.com/search.json?${params.toString()}`;
+  const json = await fetchJson(url);
+  const news = Array.isArray(json?.news_results) ? json.news_results : [];
+  return {
+    results: news.slice(0, 10).map((item) =>
+      normalizeResult({
+        title: item.title,
+        url: item.link,
+        snippet: item.snippet || item.date || item.source,
+        publishedAt: item.date,
+        sourceName: item.source?.name || item.source || hostname(item.link),
+        connector: "serpapi_google_news",
+        channelHint,
+        query,
+      }),
+    ),
+  };
+}
+
+async function searchNewsApi(query, channelHint = "newsMedia") {
+  const params = new URLSearchParams({ q: query, apiKey: NEWSAPI_KEY, pageSize: "10", sortBy: "relevancy", language: "en" });
+  const url = `https://newsapi.org/v2/everything?${params.toString()}`;
+  const json = await fetchJson(url);
+  const articles = Array.isArray(json?.articles) ? json.articles : [];
+  return {
+    results: articles.slice(0, 10).map((article) =>
+      normalizeResult({
+        title: article.title,
+        url: article.url,
+        snippet: article.description || article.content,
+        publishedAt: article.publishedAt,
+        sourceName: article.source?.name,
+        connector: "newsapi_everything",
+        channelHint,
+        query,
+      }),
+    ),
   };
 }
 
@@ -2089,7 +2247,7 @@ function claimEntityPatterns(claim) {
 
 function claimActionPatterns(claim) {
   const patterns = matchedCrossLingualConcepts(claim).filter((concept) => concept.kind === "action" || concept.kind === "topic").flatMap((concept) => concept.patterns || []);
-  if (/访美|访问|国事访问|会见|会晤|抵达|visit|state visit|official visit|meet|arrive/i.test(claim)) patterns.push(/visit|visited|visiting|state visit|official visit|trip|arriv|welcome|host|meet|address congress|访问|访美|国事访问|抵达|欢迎|会晤|会见|发表演讲|国会演讲/);
+  if (/访美|访华|访中|来华|赴华|访问|国事访问|会见|会晤|抵达|visit|state visit|official visit|meet|arrive/i.test(claim)) patterns.push(/visit|visited|visiting|state visit|official visit|trip|arriv|welcome|host|meet|address congress|访问|访美|访华|访中|来华|赴华|国事访问|抵达|欢迎|会晤|会见|发表演讲|国会演讲/);
   if (/卸任|任期|交接|继任|接棒|接任|successor|succession|transition|term/i.test(claim)) patterns.push(/term ends|term expires|chair term|successor|succession|succeed|replace|replacement|transition|handover|卸任|任期|交接|继任|接棒|接任/);
   if (/利率|降息|加息|按兵不动|维持|会议|发布会|interest rate|rate cut|hold rates|press conference/i.test(claim)) patterns.push(/interest rate|rates|rate cut|hold rates|keeps rates|unchanged|fomc|meeting|press conference|利率|降息|加息|维持|会议|发布会|按兵不动/);
   if (/独立性|政治压力|independence|political pressure/i.test(claim)) patterns.push(/independence|independent|political pressure|legal attack|political attack|独立性|政治压力|法律攻势/);
@@ -2388,7 +2546,7 @@ function isShortAtomicClaim(text) {
   if (compact.length < 4 || compact.length > 80) return false;
   const upperEntities = text.match(/\b[A-Z][A-Z0-9]{1,}\b/g) || [];
   const hasEntitySignal = upperEntities.length >= 2 || /(阿联酋|美国|中国|俄罗斯|欧盟|沙特|以色列|伊朗|乌克兰|英国|英王|国王|查尔斯|卡米拉|白宫|华盛顿|opec|欧佩克|openai|anthropic|tesla|nvidia|apple|microsoft|google|meta|uae|charles)/i.test(text);
-  const hasAction = /(退出|加入|宣布|离开|撤出|访问|访美|国事访问|会见|会晤|抵达|欢迎|制裁|起诉|收购|合并|关闭|发布|辞职|死亡|爆炸|袭击|停火|增产|减产|破产|上市|下架|withdraw|leave|exit|quit|visit|arrive|meet|host|join|announce|sanction|sue|acquire|merge|resign|bankrupt|launch)/i.test(text);
+  const hasAction = /(退出|加入|宣布|离开|撤出|访问|访美|访华|访中|来华|赴华|国事访问|会见|会晤|抵达|欢迎|制裁|起诉|收购|合并|关闭|发布|辞职|死亡|爆炸|袭击|停火|增产|减产|破产|上市|下架|withdraw|leave|exit|quit|visit|arrive|meet|host|join|announce|sanction|sue|acquire|merge|resign|bankrupt|launch)/i.test(text);
   return hasEntitySignal && hasAction;
 }
 
@@ -2423,8 +2581,8 @@ async function fetchText(url) {
   return response.text();
 }
 
-async function fetchJson(url) {
-  const response = await fetch(url, { headers: { "user-agent": USER_AGENT, accept: "application/json,text/plain,*/*" } });
+async function fetchJson(url, headers = {}) {
+  const response = await fetch(url, { headers: { "user-agent": USER_AGENT, accept: "application/json,text/plain,*/*", ...headers } });
   if (!response.ok) throw new Error(`${response.status} ${response.statusText} for ${url}`);
   return response.json();
 }

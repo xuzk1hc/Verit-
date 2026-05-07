@@ -129,6 +129,10 @@ https://verite-xxxx.onrender.com
 ## 后端连接器
 
 - 直接 URL 抓取
+- Bing Web Search API（可选，需 `BING_SEARCH_API_KEY`）
+- Google Custom Search API（可选，需 `GOOGLE_CSE_API_KEY` 和 `GOOGLE_CSE_ID`）
+- SerpAPI Google / Google News（可选，需 `SERPAPI_KEY`）
+- NewsAPI Everything（可选，需 `NEWSAPI_KEY`）
 - Google News RSS
 - GDELT News API
 - DuckDuckGo 通用网页检索
@@ -138,6 +142,18 @@ https://verite-xxxx.onrender.com
 - 自媒体 / KOL 线索检索
 - PubMed / Crossref 学术检索
 - 主动证伪检索
+
+正式搜索 API 都是可选增强项。未配置 Key 时，Verité 会自动使用公开连接器；配置 Key 后，联网后端会把正式 API 结果加入同一套证据评分流程，适合 Render / VPS 等云端环境降低 403、超时和地区差异。
+
+可在本地 `.env` 或 Render Environment 中配置：
+
+```text
+BING_SEARCH_API_KEY=
+GOOGLE_CSE_API_KEY=
+GOOGLE_CSE_ID=
+SERPAPI_KEY=
+NEWSAPI_KEY=
+```
 
 当前社交平台检索受公开网页和平台限制影响。X、微博、Facebook、Instagram 等平台的完整数据需要后续接入正式 API 或合规数据供应商。
 
