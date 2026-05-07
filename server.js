@@ -4,9 +4,17 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
+
+await loadEnvFile(".env");
+await loadEnvFile(".env.local");
+
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || "127.0.0.1";
 const AI_COMMITTEE_ENABLED = process.env.VERITE_AI_COMMITTEE === "1" || process.env.CHEK_AI_COMMITTEE === "1";
+const AI_API_KEY = process.env.VERITE_AI_API_KEY || process.env.OPENAI_API_KEY || "";
+const AI_API_KEY_CONFIGURED = Boolean(AI_API_KEY);
+const AI_BASE_URL = (process.env.VERITE_AI_BASE_URL || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
+const AI_MODEL = process.env.VERITE_AI_MODEL || process.env.OPENAI_MODEL || "qwen-plus";
 const MEDIA_AI_ENABLED = process.env.VERITE_MEDIA_AI === "1";
 const MEDIA_AI_URL = process.env.VERITE_MEDIA_AI_URL || "http://127.0.0.1:8790/analyze";
 const BING_SEARCH_API_KEY = process.env.BING_SEARCH_API_KEY || "";
@@ -16,6 +24,29 @@ const SERPAPI_KEY = process.env.SERPAPI_KEY || "";
 const NEWSAPI_KEY = process.env.NEWSAPI_KEY || "";
 const CURRENT_DATE = new Date("2026-04-29T00:00:00+08:00");
 const USER_AGENT = "Verite/0.2 (+local fact-check research tool)";
+
+async function loadEnvFile(fileName) {
+  let text = "";
+  try {
+    text = await readFile(join(__dirname, fileName), "utf8");
+  } catch (error) {
+    if (error?.code !== "ENOENT") console.warn(`Failed to load ${fileName}: ${error.message || error}`);
+    return;
+  }
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const match = line.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match) continue;
+    const [, key, rawValue] = match;
+    if (process.env[key] !== undefined) continue;
+    let value = rawValue.trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    process.env[key] = value;
+  }
+}
 
 const profiles = {
   event: {
@@ -219,7 +250,18 @@ const mimeTypes = {
 createServer(async (req, res) => {
   try {
     if (req.method === "OPTIONS") return sendCors(res, 204, "");
-    if (req.url === "/api/health") return sendJson(res, { ok: true, service: "Verité backend", online: true, time: new Date().toISOString() });
+    if (req.url === "/api/health") {
+      return sendJson(res, {
+        ok: true,
+        service: "Verité backend",
+        online: true,
+        aiCommitteeEnabled: AI_COMMITTEE_ENABLED,
+        aiApiKeyConfigured: AI_API_KEY_CONFIGURED,
+        aiModel: AI_API_KEY_CONFIGURED ? AI_MODEL : "",
+        aiBaseUrlConfigured: Boolean(AI_BASE_URL),
+        time: new Date().toISOString(),
+      });
+    }
     if (req.url === "/api/check" && req.method === "POST") {
       const payload = await readJson(req);
       const result = await checkClaim(payload);
@@ -250,6 +292,7 @@ async function checkClaim(payload) {
   const searchBundle = await runSearchPlan(input);
   const evidence = scoreEvidence(searchBundle, input, localSignals);
   const report = buildReport(input, localSignals, evidence, searchBundle);
+  await enrichReportWithAiCommittee(input, localSignals, evidence, report);
   return {
     ok: true,
     mode: "online_backend",
@@ -2055,13 +2098,143 @@ function buildAiCommitteeReview(input, localSignals, evidence, angleScores, fina
   }));
 
   return {
+    enabled: true,
+    apiKeyConfigured: AI_API_KEY_CONFIGURED,
+    externalAiUsed: false,
     mode: "本地多 Agent 证据推理",
-    note: "不调用外部 LLM，不上传用户输入；只基于联网检索证据和七角度评分复核。",
+    note: AI_API_KEY_CONFIGURED
+      ? `已检测到 AI API Key；将尝试调用 ${AI_MODEL} 做外部复核，失败时保留本地多 Agent 结果。`
+      : "不调用外部 LLM，不上传用户输入；只基于联网检索证据和七角度评分复核。",
     consensusScore,
     consensusVerdict: verdictFor(consensusScore).label,
     suggestedAdjustment: adjustment,
     disagreement,
     agents,
+  };
+}
+
+async function enrichReportWithAiCommittee(input, localSignals, evidence, report) {
+  if (!AI_COMMITTEE_ENABLED || !report.aiCommittee || !AI_API_KEY_CONFIGURED) return;
+  const external = await runExternalAiReview(input, localSignals, evidence, report);
+  if (!external) return;
+  const agents = Array.isArray(report.aiCommittee.agents) ? [...report.aiCommittee.agents] : [];
+  agents.unshift(committeeAgent({
+    name: "外部 AI 复核 Agent",
+    role: `${AI_MODEL} · 综合审阅证据与可疑点`,
+    score: external.score,
+    basis: external.basis,
+    concern: external.concern,
+    action: external.action,
+  }));
+  const localScores = agents.map((agent) => Number(agent.score)).filter(Number.isFinite);
+  const consensusScore = clamp(localScores.reduce((sum, score) => sum + score, 0) / Math.max(1, localScores.length));
+  const disagreement = Math.max(...localScores) - Math.min(...localScores);
+  report.aiCommittee = {
+    ...report.aiCommittee,
+    externalAiUsed: true,
+    externalAiModel: AI_MODEL,
+    mode: `外部 AI + 本地多 Agent 复核`,
+    note: external.summary || `已调用 ${AI_MODEL} 对联网证据、反证和评分进行复核。`,
+    consensusScore,
+    consensusVerdict: verdictFor(consensusScore).label,
+    suggestedAdjustment: Math.max(-12, Math.min(12, Math.round((consensusScore - report.finalScore) * 0.35))),
+    disagreement,
+    agents,
+  };
+}
+
+async function runExternalAiReview(input, localSignals, evidence, report) {
+  const payload = {
+    model: AI_MODEL,
+    temperature: 0.1,
+    messages: [
+      {
+        role: "system",
+        content: "你是新闻真实性复核委员会中的外部审阅 Agent。只能基于用户输入、系统给出的证据摘要和可疑点判断，不要编造新证据。用 JSON 输出。",
+      },
+      {
+        role: "user",
+        content: JSON.stringify(buildExternalAiReviewPayload(input, localSignals, evidence, report)),
+      },
+    ],
+  };
+  try {
+    const response = await fetch(`${AI_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${AI_API_KEY}`,
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(18000),
+    });
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      throw new Error(`${response.status} ${response.statusText}${errorText ? ` · ${errorText.slice(0, 220)}` : ""}`);
+    }
+    const json = await response.json();
+    const content = json?.choices?.[0]?.message?.content || "";
+    return parseExternalAiReview(content);
+  } catch (error) {
+    report.aiCommittee.note = `外部 AI 复核调用失败：${safeText(error.message || String(error))}。已保留本地多 Agent 复核结果。`;
+    report.aiCommittee.externalAiUsed = false;
+    return null;
+  }
+}
+
+function buildExternalAiReviewPayload(input, localSignals, evidence, report) {
+  return {
+    instruction: "请返回 JSON：score(0-100), stance, basis, concern, action, summary。不要输出 Markdown。",
+    userInput: {
+      text: input.text,
+      url: input.url,
+      type: input.type,
+      impact: input.impact,
+      sourceName: input.sourceName,
+    },
+    finalScore: report.finalScore,
+    verdict: report.verdict?.label,
+    cap: report.cap,
+    angleScores: Object.fromEntries(Object.entries(report.angleScores || {}).map(([key, value]) => [key, value.score])),
+    evidence: (report.evidence || []).slice(0, 10),
+    risks: (report.risks || []).slice(0, 8),
+    channels: (report.channels || []).map((channel) => ({
+      label: channel.label,
+      status: channel.status,
+      score: channel.score,
+      role: channel.role,
+      note: channel.note,
+    })),
+    topLinks: {
+      evidence: (report.links?.evidence || []).slice(0, 5).map((item) => ({ title: item.title, source: item.source, tier: item.tier, score: item.score })),
+      suspicious: (report.links?.suspicious || []).slice(0, 5).map((item) => ({ title: item.title, source: item.source, tier: item.tier, score: item.score })),
+    },
+    localSignals: {
+      shortAtomicClaim: localSignals.shortAtomicClaim,
+      specificNamedEvent: localSignals.specificNamedEvent,
+      needsAcademicEvidence: localSignals.needsAcademicEvidence,
+      mediaStatus: localSignals.mediaIntegrity?.status,
+    },
+  };
+}
+
+function parseExternalAiReview(content) {
+  let parsed = null;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    const match = String(content || "").match(/\{[\s\S]*\}/);
+    if (match) parsed = JSON.parse(match[0]);
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const score = clamp(Number(parsed.score ?? parsed.confidence ?? 50));
+  return {
+    score,
+    stance: safeText(parsed.stance || committeeStance(score)),
+    basis: safeText(parsed.basis || parsed.reason || "外部 AI 已审阅证据摘要"),
+    concern: safeText(parsed.concern || parsed.risk || "仍需人工确认关键来源链"),
+    action: safeText(parsed.action || parsed.recommendation || "保留证据链接并追踪后续更新"),
+    summary: safeText(parsed.summary || ""),
   };
 }
 

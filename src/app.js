@@ -939,7 +939,7 @@ function renderMediaWorkflow(workflow = {}) {
 function renderAiCommittee(committee = {}) {
   const section = document.getElementById("aiCommitteeSection");
   if (!section) return;
-  if (!AI_COMMITTEE_ENABLED || !committee) {
+  if (!committee || committee.enabled === false) {
     section.classList.add("is-hidden");
     return;
   }

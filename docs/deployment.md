@@ -69,11 +69,22 @@ http://服务器公网IP:8787
 HOST=0.0.0.0
 VERITE_MEDIA_AI=1
 VERITE_MEDIA_AI_URL=http://127.0.0.1:8790/analyze
+VERITE_AI_COMMITTEE=1
+VERITE_AI_API_KEY=可选
+VERITE_AI_BASE_URL=https://coding.dashscope.aliyuncs.com/v1
+VERITE_AI_MODEL=qwen3-coder-plus
 BING_SEARCH_API_KEY=可选
 GOOGLE_CSE_API_KEY=可选
 GOOGLE_CSE_ID=可选
 SERPAPI_KEY=可选
 NEWSAPI_KEY=可选
+```
+
+如果使用普通百炼通义千问模型，可以改成：
+
+```text
+VERITE_AI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+VERITE_AI_MODEL=qwen-plus
 ```
 
 平台会提供自己的 `PORT`，Verité 会自动读取。
