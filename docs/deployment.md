@@ -30,9 +30,12 @@ GOOGLE_CSE_API_KEY=...
 GOOGLE_CSE_ID=...
 SERPAPI_KEY=...
 NEWSAPI_KEY=...
+VERITE_GOOGLE_NEWS_RSS=0
 ```
 
-这些变量都可以留空。只要配置其中任意一个，Verité 后端就会在原有 Google News RSS、GDELT、DuckDuckGo、PubMed、Crossref 之外，额外调用对应正式 API，并把结果纳入同一套交叉验证评分。
+这些变量都可以留空。只要配置其中任意一个，Verité 后端就会在 GDELT、DuckDuckGo、PubMed、Crossref 等公开连接器之外，额外调用对应正式 API，并把结果纳入同一套交叉验证评分。
+
+`VERITE_GOOGLE_NEWS_RSS` 默认等同于 `0`。Render 等云端环境经常被 Google News RSS 限流或封锁，建议保持关闭；只有在本地或可稳定访问的服务器上，才设置为 `1`。
 
 推荐优先级：
 
@@ -40,6 +43,8 @@ NEWSAPI_KEY=...
 2. `SERPAPI_KEY`：Google / Google News 结果质量较好，但通常是付费服务。
 3. `GOOGLE_CSE_API_KEY` + `GOOGLE_CSE_ID`：适合自定义搜索范围。
 4. `NEWSAPI_KEY`：适合补充英文新闻源。
+
+后端证据时间置信使用服务器当前时间自动计算，不再硬编码日期。实时新闻会优先采纳新近证据，旧新闻和缺少发布时间的页面会降权。
 
 ## Docker / VPS
 
@@ -91,6 +96,6 @@ VERITE_AI_MODEL=qwen-plus
 
 ## 注意事项
 
-- 当前联网检索使用公开网页、Google News RSS、GDELT、DuckDuckGo、PubMed、Crossref 等公开入口。多人高频使用时，建议后续接入正式搜索 API，避免被限流。
+- 当前联网检索使用 GDELT、DuckDuckGo、PubMed、Crossref 等公开入口，并可选启用 Google News RSS。多人高频使用时，建议接入正式搜索 API，避免被限流。
 - 媒介 AI 服务默认只在容器内部 `127.0.0.1:8790` 监听，不直接暴露给公网。
 - 上传的图片 / 视频会在前端生成缩略样本和结构化摘要；公网部署前仍建议在隐私政策中说明素材处理方式。

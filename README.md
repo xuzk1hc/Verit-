@@ -18,7 +18,7 @@ https://verit.onrender.com
 - 来源链识别：区分原始来源、同源转载、聚合页和独立报道；用户输入的原文不计为支持证据。
 - 媒介取证：检查 EXIF/XMP/C2PA、关键帧、压缩异常、ELA/JPEG Ghost、AI 生成痕迹。
 - 分析总结：用简短自然语言概括评分、证据、反证、封顶原因和主要可疑点，帮助用户快速判断。
-- 数据化报告：七角度评分、渠道交叉验证、信息拆解、证据表、可疑点、来源评级、相关链接和后验证复核队列。
+- 数据化报告：七角度评分、渠道交叉验证、信息拆解、证据表、可疑点、来源评级和相关链接。
 - AI 复核委员会：位于七角度评分下方，可合并本地多 Agent 和外部 AI 复核结果。
 - 响应式界面：报告面板会根据屏幕宽度自动换行，表格在卡片内部滚动，避免内容被裁切。
 
@@ -33,8 +33,6 @@ Verité 从七个角度计算最终可信度：
 5. 现实世界旁证
 6. 统计异常与基准率
 7. 内容与媒介完整性
-
-后验证复核机制独立存在，用于在 1 小时、24 小时、72 小时、7 天等节点追踪官方回应、撤稿、更正、平台处置和新证据。
 
 ## 本地运行
 
@@ -136,7 +134,7 @@ https://verite-xxxx.onrender.com
 - Google Custom Search API（可选，需 `GOOGLE_CSE_API_KEY` 和 `GOOGLE_CSE_ID`）
 - SerpAPI Google / Google News（可选，需 `SERPAPI_KEY`）
 - NewsAPI Everything（可选，需 `NEWSAPI_KEY`）
-- Google News RSS
+- Google News RSS（默认关闭；需 `VERITE_GOOGLE_NEWS_RSS=1` 手动启用）
 - GDELT News API
 - DuckDuckGo 通用网页检索
 - 官方 / 原始文件定向检索
@@ -146,7 +144,7 @@ https://verite-xxxx.onrender.com
 - PubMed / Crossref 学术检索
 - 主动证伪检索
 
-正式搜索 API 都是可选增强项。未配置 Key 时，Verité 会自动使用公开连接器；配置 Key 后，联网后端会把正式 API 结果加入同一套证据评分流程，适合 Render / VPS 等云端环境降低 403、超时和地区差异。
+正式搜索 API 都是可选增强项。未配置 Key 时，Verité 会自动使用公开连接器；配置 Key 后，联网后端会把正式 API 结果加入同一套证据评分流程，适合 Render / VPS 等云端环境降低 403、超时和地区差异。Google News RSS 在云端容易被限流或封锁，因此默认关闭，避免同一连接器失败被大量 query 放大。
 
 可在本地 `.env` 或 Render Environment 中配置：
 
@@ -156,7 +154,10 @@ GOOGLE_CSE_API_KEY=
 GOOGLE_CSE_ID=
 SERPAPI_KEY=
 NEWSAPI_KEY=
+VERITE_GOOGLE_NEWS_RSS=0
 ```
+
+后端使用服务器当前时间计算证据时间置信，不再硬编码日期。实时 / 结果型新闻会优先采纳新近证据；旧新闻、缺少发布时间的网页会被降权或只作为背景。
 
 当前社交平台检索受公开网页和平台限制影响。X、微博、Facebook、Instagram 等平台的完整数据需要后续接入正式 API 或合规数据供应商。
 

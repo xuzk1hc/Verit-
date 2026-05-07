@@ -15,7 +15,6 @@
       <div class="status-row" aria-label="system status">
         <span class="status-pill">7 角度</span>
         <span id="backendBadge" class="status-pill">后端检测中</span>
-        <span class="status-pill">复核队列</span>
       </div>
     </header>
 
@@ -107,10 +106,6 @@
               <div>
                 <span>检索</span>
                 <strong id="counterCount">--</strong>
-              </div>
-              <div>
-                <span>复核</span>
-                <strong id="reviewAt">--</strong>
               </div>
             </div>
           </section>
@@ -271,38 +266,20 @@
             </div>
           </section>
 
-          <section class="split">
-            <div class="table-section">
-              <div class="section-title">来源评级</div>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>来源</th>
-                      <th>层级</th>
-                      <th>分</th>
-                      <th>角色</th>
-                    </tr>
-                  </thead>
-                  <tbody id="sourceRows"></tbody>
-                </table>
-              </div>
-            </div>
-
-            <div class="table-section">
-              <div class="section-title">复核队列</div>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>时间</th>
-                      <th>检查</th>
-                      <th>状态</th>
-                    </tr>
-                  </thead>
-                  <tbody id="reviewRows"></tbody>
-                </table>
-              </div>
+          <section class="table-section">
+            <div class="section-title">来源评级</div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>来源</th>
+                    <th>层级</th>
+                    <th>分</th>
+                    <th>角色</th>
+                  </tr>
+                </thead>
+                <tbody id="sourceRows"></tbody>
+              </table>
             </div>
           </section>
 

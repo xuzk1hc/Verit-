@@ -767,8 +767,6 @@ function renderReport(report) {
   const englishQueries = report.diagnostics?.englishNetworkQueryCount || 0;
   const savedJobs = report.retrievalPlan?.savedJobs || report.diagnostics?.retrievalSavedJobs || 0;
   document.getElementById("counterCount").textContent = savedJobs ? `省 ${savedJobs} / 证伪 ${counterQueries}` : englishQueries ? `证伪 ${counterQueries} / 英网 ${englishQueries}` : counterQueries ? `${counterQueries} 式` : `${report.media.length} 个素材`;
-  document.getElementById("reviewAt").textContent = report.review[0]?.[0] || "--";
-
   const weights = report.profile.weights;
   renderAnalysisSummary(report.analysisSummary || buildClientAnalysisSummary(report), report);
   setRows("angleRows", Object.entries(report.angleScores).map(([key, item]) => {
@@ -796,7 +794,6 @@ function renderReport(report) {
   renderRetrievalPlan(report.retrievalPlan);
   renderMediaForensics(report.mediaIntegrity);
   renderMediaWorkflow(report.mediaWorkflow);
-  setRows("reviewRows", report.review.map((row) => [row[0], row[1], badge(row[2], row[2] === "待接入" ? 54 : 68)]));
   renderAiCommittee(report.aiCommittee);
   renderReportLinks(report.links);
 }

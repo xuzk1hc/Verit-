@@ -22,7 +22,8 @@ const GOOGLE_CSE_API_KEY = process.env.GOOGLE_CSE_API_KEY || "";
 const GOOGLE_CSE_ID = process.env.GOOGLE_CSE_ID || "";
 const SERPAPI_KEY = process.env.SERPAPI_KEY || "";
 const NEWSAPI_KEY = process.env.NEWSAPI_KEY || "";
-const CURRENT_DATE = new Date("2026-04-29T00:00:00+08:00");
+const GOOGLE_NEWS_RSS_ENABLED = process.env.VERITE_GOOGLE_NEWS_RSS === "1";
+const CURRENT_DATE = new Date();
 const USER_AGENT = "Verite/0.2 (+local fact-check research tool)";
 
 async function loadEnvFile(fileName) {
@@ -180,6 +181,7 @@ const englishNewsNetworkTerms = ["Reuters", "AP", "BBC", "Bloomberg", "Financial
 const crossLingualConcepts = [
   { id: "united_states", kind: "entity", triggers: [/美国|美方|白宫|华盛顿|united states|america|u\.?s\.?|white house|washington/i], terms: ["United States", "US", "America", "White House", "Washington"], patterns: [/united states|\bu\.s\.\b|\bus\b|america|american|white house|washington|美国|美方|白宫|华盛顿/i], domains: ["whitehouse.gov", "state.gov"] },
   { id: "china", kind: "entity", triggers: [/中国|中方|北京|访华|访中|来华|赴华|china|beijing/i], terms: ["China", "Beijing", "Chinese government"], patterns: [/china|chinese|beijing|中国|中方|北京|访华|访中|来华|赴华/i], domains: ["gov.cn", "fmprc.gov.cn"] },
+  { id: "china_football_team", kind: "entity", triggers: [/中国队|国足|中国男足|男足|中国足球|china national football team|chinese national football team|team china|china soccer/i], terms: ["China national football team", "Chinese men's football team", "China soccer team", "Team China football"], patterns: [/china national football team|chinese national football team|chinese men's football team|china soccer team|team china football|中国队|国足|中国男足|男足|中国足球/i] },
   { id: "united_kingdom", kind: "entity", triggers: [/英国|英方|伦敦|united kingdom|britain|u\.?k\.|london/i], terms: ["United Kingdom", "Britain", "UK", "London"], patterns: [/united kingdom|britain|british|\bu\.k\.\b|\buk\b|london|英国|英方|伦敦/i], domains: ["gov.uk", "parliament.uk"] },
   { id: "russia", kind: "entity", triggers: [/俄罗斯|俄方|莫斯科|russia|moscow/i], terms: ["Russia", "Moscow", "Kremlin"], patterns: [/russia|russian|moscow|kremlin|俄罗斯|俄方|莫斯科/i], domains: ["kremlin.ru"] },
   { id: "ukraine", kind: "entity", triggers: [/乌克兰|基辅|ukraine|kyiv|kiev/i], terms: ["Ukraine", "Kyiv"], patterns: [/ukraine|ukrainian|kyiv|kiev|乌克兰|基辅/i], domains: ["president.gov.ua"] },
@@ -205,12 +207,15 @@ const crossLingualConcepts = [
   { id: "resignation", kind: "action", triggers: [/辞职|卸任|离任|下台|resign|step down|quit/i], terms: ["resign", "step down", "resignation", "leave office"], patterns: [/resign|step down|resignation|leave office|辞职|卸任|离任|下台/i] },
   { id: "succession", kind: "action", triggers: [/任期|交接|继任|接棒|接任|换届|successor|succession|transition|term|replacement/i], terms: ["term ends", "term expires", "transition", "succession", "successor", "replacement"], patterns: [/term ends|term expires|chair term|successor|succession|succeed|replace|replacement|transition|handover|任期|交接|继任|接棒|接任|换届/i] },
   { id: "withdrawal", kind: "action", triggers: [/退出|离开|撤出|withdraw|leave|exit|quit/i], terms: ["withdraw", "leave", "exit"], patterns: [/withdraw|leav|exit|quit|退出|离开|撤出/i] },
+  { id: "qualification", kind: "action", triggers: [/进世界杯|晋级|出线|入围|获得资格|qualified|qualify|qualification|advance/i], terms: ["qualified", "qualification", "qualify for", "advance to", "book a place", "secure a spot"], patterns: [/qualif(?:y|ied|ication)|advance|book(?:ed)?\s+(?:a\s+)?place|secure(?:d)?\s+(?:a\s+)?spot|晋级|出线|入围|获得资格|进世界杯/i] },
   { id: "sanctions", kind: "action", triggers: [/制裁|禁令|出口管制|sanction|ban|export control/i], terms: ["sanctions", "ban", "export controls"], patterns: [/sanction|ban|export control|blacklist|制裁|禁令|出口管制/i] },
   { id: "acquisition", kind: "action", triggers: [/收购|并购|合并|acquire|acquisition|merger/i], terms: ["acquisition", "acquire", "merger", "takeover"], patterns: [/acquir|acquisition|takeover|merger|buy|merge|收购|并购|合并/i] },
   { id: "lawsuit", kind: "action", triggers: [/起诉|诉讼|法院|判决|裁定|lawsuit|sue|court|ruling/i], terms: ["lawsuit", "court ruling", "sued", "legal case"], patterns: [/lawsuit|sue|sued|court|ruling|judge|legal case|起诉|诉讼|法院|判决|裁定/i], domains: ["justice.gov", "courtlistener.com"] },
   { id: "investigation", kind: "action", triggers: [/调查|监管|审查|probe|investigation|regulator/i], terms: ["investigation", "probe", "regulatory review"], patterns: [/investigation|probe|regulator|regulatory review|scrutiny|调查|监管|审查/i] },
   { id: "war_conflict", kind: "topic", triggers: [/战争|冲突|袭击|爆炸|停火|军方|war|conflict|attack|ceasefire|military/i], terms: ["war", "conflict", "attack", "ceasefire", "military"], patterns: [/war|conflict|attack|strike|ceasefire|military|战争|冲突|袭击|爆炸|停火|军方/i], domains: ["un.org"] },
   { id: "election", kind: "topic", triggers: [/选举|投票|民调|总统大选|election|vote|poll/i], terms: ["election", "vote", "poll", "campaign"], patterns: [/election|vote|voting|poll|campaign|选举|投票|民调/i] },
+  { id: "world_cup", kind: "topic", triggers: [/世界杯|world cup|fifa world cup/i], terms: ["FIFA World Cup", "World Cup"], patterns: [/fifa world cup|world cup|世界杯/i] },
+  { id: "football", kind: "topic", triggers: [/足球|国足|男足|soccer|football/i], terms: ["football", "soccer", "national football team"], patterns: [/football|soccer|national football team|足球|国足|男足/i] },
   { id: "rate_policy", kind: "topic", triggers: [/利率|降息|加息|按兵不动|维持|会议|发布会|interest rate|rate cut|hold rates|press conference/i], terms: ["interest rates", "rate decision", "hold rates", "rate cut", "press conference"], patterns: [/interest rate|rates|rate cut|hold rates|keeps rates|unchanged|meeting|press conference|利率|降息|加息|维持|会议|发布会|按兵不动/i] },
   { id: "central_bank_independence", kind: "topic", triggers: [/独立性|政治压力|央行独立|independence|political pressure/i], terms: ["central bank independence", "political pressure", "Fed independence"], patterns: [/central bank independence|fed independence|independence|independent|political pressure|legal attack|独立性|政治压力|央行独立/i] },
   { id: "dissent_vote", kind: "topic", triggers: [/分歧|反对票|投票|dissent|split vote|vote/i], terms: ["dissent", "split vote", "policy division"], patterns: [/dissent|split vote|divided|division|vote|voted|反对票|投票|分歧|分裂/i] },
@@ -312,8 +317,9 @@ async function checkClaim(payload) {
       connectorCount: searchBundle.connectors.length,
       rawResultCount: searchBundle.rawCount,
       counterRawResultCount: searchBundle.counterRawCount,
-      errorCount: searchBundle.errors.length,
-      errors: searchBundle.errors.slice(0, 6),
+      errorCount: searchBundle.errorSummary?.reduce((sum, item) => sum + item.count, 0) || searchBundle.errors.length,
+      failedConnectorCount: searchBundle.errorSummary?.length || 0,
+      errors: (searchBundle.errorSummary || summarizeSearchErrors(searchBundle.errors)).slice(0, 6).map((item) => `${item.connector} ×${item.count}: ${item.sample}`),
     },
   };
 }
@@ -525,9 +531,9 @@ async function runSearchPlan(input) {
     const startedRawCount = raw.length;
     const startedErrorCount = errors.length;
     const settled = await Promise.allSettled(runnable.map((spec) => withTimeout(spec.make(), spec.timeout || 9000)));
-    for (const item of settled) {
+    for (const [index, item] of settled.entries()) {
       if (item.status === "fulfilled") raw.push(...(item.value.results || []));
-      else errors.push(item.reason?.message || String(item.reason));
+      else errors.push({ connector: runnable[index]?.connector || "unknown", message: item.reason?.message || String(item.reason) });
     }
     const state = evaluateRetrievalState(raw, input);
     stages.push({
@@ -577,6 +583,7 @@ async function runSearchPlan(input) {
     rawCount: raw.length,
     counterRawCount,
     errors,
+    errorSummary: summarizeSearchErrors(errors),
     results: deduped,
     retrievalPlan: {
       mode: "FIRE-style adaptive retrieval",
@@ -600,7 +607,7 @@ function buildRetrievalJobSpecs(input, queries) {
     timeout,
   });
   const ddg = (query, hint = "web") => job(hint === "web" ? "duckduckgo_web" : hint, query, () => searchDuckDuckGo(query, hint));
-  const gnews = (query, hint = "news") => job(hint === "news" ? "google_news_rss" : hint, query, () => searchGoogleNews(query, hint));
+  const gnews = (query, hint = "news") => GOOGLE_NEWS_RSS_ENABLED ? [job(hint === "news" ? "google_news_rss" : hint, query, () => searchGoogleNews(query, hint))] : [];
   const gdelt = (query, hint = "gdelt_news") => job(hint === "gdelt_news" ? "gdelt_news" : hint, query, () => searchGdelt(query, hint));
   const reddit = (query) => job("reddit", query, () => searchReddit(query));
   const apiWeb = (query, hint = "web") => officialSearchApiJobs(query, hint, job);
@@ -611,19 +618,19 @@ function buildRetrievalJobSpecs(input, queries) {
   for (const query of queries.primary.slice(0, 3)) {
     foundation.push(...apiNews(query, "newsMedia"));
     foundation.push(...apiWeb(query, "web"));
-    foundation.push(gnews(query));
+    foundation.push(...gnews(query));
     foundation.push(ddg(query, "web"));
   }
   for (const query of queries.englishNetwork.slice(0, 2)) {
     foundation.push(...apiNews(query, "english_network"));
     foundation.push(...apiWeb(query, "english_network"));
-    foundation.push(gnews(query, "english_network"));
+    foundation.push(...gnews(query, "english_network"));
     foundation.push(ddg(query, "english_network"));
   }
   for (const query of queries.counterEvidence.slice(0, 2)) {
     foundation.push(...apiNews(query, "counter_evidence"));
     foundation.push(...apiWeb(query, "counter_evidence"));
-    foundation.push(gnews(query, "counter_evidence"));
+    foundation.push(...gnews(query, "counter_evidence"));
     foundation.push(ddg(query, "counter_evidence"));
   }
   if (queries.academicNeeded && queries.academic[0]) foundation.push(job("pubmed", queries.academic[0], () => searchPubMed(queries.academic[0])));
@@ -631,14 +638,14 @@ function buildRetrievalJobSpecs(input, queries) {
   const standard = [];
   for (const query of queries.primary.slice(3, 7)) {
     standard.push(...apiNews(query, "newsMedia"));
-    standard.push(gnews(query));
+    standard.push(...gnews(query));
     standard.push(gdelt(query));
     standard.push(ddg(query, "web"));
   }
   for (const query of queries.englishNetwork.slice(2, 5)) {
     standard.push(...apiNews(query, "english_network"));
     standard.push(...apiWeb(query, "english_network"));
-    standard.push(gnews(query, "english_network"));
+    standard.push(...gnews(query, "english_network"));
     standard.push(gdelt(query, "english_network"));
     standard.push(ddg(query, "english_network"));
   }
@@ -653,7 +660,7 @@ function buildRetrievalJobSpecs(input, queries) {
   for (const query of queries.counterEvidence.slice(2, 7)) {
     standard.push(...apiNews(query, "counter_evidence"));
     standard.push(...apiWeb(query, "counter_evidence"));
-    standard.push(gnews(query, "counter_evidence"));
+    standard.push(...gnews(query, "counter_evidence"));
     standard.push(ddg(query, "counter_evidence"));
   }
   for (const query of queries.academic.slice(1, 3)) {
@@ -668,7 +675,7 @@ function buildRetrievalJobSpecs(input, queries) {
   }
   for (const query of queries.englishNetwork.slice(5)) {
     expanded.push(...apiNews(query, "english_network"));
-    expanded.push(gnews(query, "english_network"));
+    expanded.push(...gnews(query, "english_network"));
     expanded.push(ddg(query, "english_network"));
   }
   for (const query of queries.official.slice(4)) {
@@ -694,7 +701,7 @@ function buildRetrievalJobSpecs(input, queries) {
     expanded.push(ddg(query, "academic"));
   }
   for (const query of queries.counterEvidence.slice(7)) {
-    expanded.push(gnews(query, "counter_evidence"));
+    expanded.push(...gnews(query, "counter_evidence"));
     expanded.push(ddg(query, "counter_evidence"));
   }
 
@@ -714,6 +721,27 @@ function dedupeJobSpecs(specs) {
     output.push(spec);
   }
   return output;
+}
+
+function summarizeSearchErrors(errors = []) {
+  const groups = new Map();
+  for (const item of errors) {
+    const rawConnector = typeof item === "string" ? "unknown" : item.connector || "unknown";
+    const connector = normalizeErrorConnector(rawConnector);
+    const message = typeof item === "string" ? item : item.message || "";
+    const bucket = groups.get(connector) || { connector, count: 0, sample: "" };
+    bucket.count += 1;
+    if (!bucket.sample && message) bucket.sample = message;
+    groups.set(connector, bucket);
+  }
+  return [...groups.values()].sort((a, b) => b.count - a.count);
+}
+
+function normalizeErrorConnector(connector) {
+  if (/gdelt|english_network/.test(connector)) return "gdelt_news";
+  if (/google_news/.test(connector)) return "google_news_rss";
+  if (/duckduckgo|ddg/.test(connector)) return "duckduckgo";
+  return connector || "unknown";
 }
 
 function officialSearchApiJobs(query, channelHint, job) {
@@ -1023,6 +1051,9 @@ function expandClaimTerms(claim, englishContext = buildEnglishInformationContext
   if (/美国|访美|白宫|华盛顿|united states|america|u\.?s\.?/i.test(cleaned)) terms.push("United States", "US", "America", "White House", "Washington");
   if (/访华|访中|来华|赴华/i.test(cleaned)) terms.push("China", "Beijing", "visit China", "China visit", "official visit to China");
   if (/访美|访华|访中|来华|赴华|访问|国事访问|visit|state visit|official visit/i.test(cleaned)) terms.push("visit", "state visit", "official visit", "arrive", "host");
+  if (/中国队|国足|中国男足|男足|中国足球/i.test(cleaned)) terms.push("China national football team", "Chinese men's football team", "China soccer team", "Team China football");
+  if (/世界杯|world cup|fifa world cup/i.test(cleaned)) terms.push("FIFA World Cup", "World Cup");
+  if (/进世界杯|晋级|出线|入围|获得资格|qualified|qualify|qualification|advance/i.test(cleaned)) terms.push("qualified", "qualification", "qualify for World Cup", "World Cup qualification");
   if (/鲍威尔|powell/i.test(cleaned)) terms.push("Jerome Powell", "Powell");
   if (/美联储|联邦储备|fed|federal reserve|fomc/i.test(cleaned)) terms.push("Federal Reserve", "Fed", "FOMC", "Fed chair");
   if (/沃什|warsh/i.test(cleaned)) terms.push("Kevin Warsh", "Warsh");
@@ -1068,6 +1099,13 @@ function buildClaimVariants(claim, terms, englishContext = buildEnglishInformati
     );
   }
   if (/uae|阿联酋|opec|欧佩克/i.test(claim)) variants.push("UAE OPEC withdraw exit official statement");
+  if (/中国队|国足|中国男足|男足|中国足球|世界杯|world cup/i.test(claim)) {
+    variants.push(
+      "China national football team qualified for FIFA World Cup",
+      "Chinese men's football team World Cup qualification",
+      "China soccer team qualify World Cup Reuters AP FIFA",
+    );
+  }
   if (/鲍威尔|powell|美联储|federal reserve|fed|沃什|warsh/i.test(claim)) {
     variants.push(
       "Jerome Powell Federal Reserve chair term ends May 15 2026",
@@ -1085,6 +1123,7 @@ function inferOfficialDomains(claim, englishContext = buildEnglishInformationCon
   domains.push(...(englishContext.domains || []));
   if (/uae|阿联酋|opec|欧佩克/i.test(claim)) domains.push("wam.ae", "opec.org", "moei.gov.ae", "mofa.gov.ae", "en.aletihad.ae");
   if (/查尔斯|charles|英王|英国国王|国王|卡米拉|访美|国事访问/i.test(claim)) domains.push("royal.uk", "whitehouse.gov", "congress.gov", "gov.uk", "parliament.uk");
+  if (/中国队|国足|中国男足|男足|中国足球|世界杯|world cup|fifa/i.test(claim)) domains.push("fifa.com", "the-afc.com", "thecfa.cn");
   if (/鲍威尔|powell|美联储|federal reserve|fed|fomc|沃什|warsh/i.test(claim)) domains.push("federalreserve.gov", "senate.gov", "whitehouse.gov", "treasury.gov");
   if (/openai/i.test(claim)) domains.push("openai.com");
   if (/anthropic/i.test(claim)) domains.push("anthropic.com");
@@ -1436,7 +1475,12 @@ function contextualMatchProfile(resultText, frame, input) {
   const score = clamp(coreCoverage * 0.72 + semantic * 0.28);
   const hasCoreEntity = frame.entities.length ? entityCoverage >= 0.34 : conceptCoverage >= 0.34;
   const hasContext = actionCoverage >= 0.34 || topicCoverage >= 0.34 || temporalCoverage >= 0.5 || semantic >= 58;
-  const supportive = hasCoreEntity && hasContext && score >= (frame.isAnalytical ? 45 : 52);
+  const actionRequired = frame.actions.length ? actionCoverage >= 0.5 : true;
+  const topicRequired = frame.topics.length >= 2 ? topicCoverage >= 0.5 : true;
+  const conceptRequired = frame.concepts.length >= 3 ? conceptCoverage >= 0.6 : conceptCoverage >= 0.45;
+  const concreteSupportive = hasCoreEntity && actionRequired && topicRequired && conceptRequired && score >= 55;
+  const analyticalSupportive = hasCoreEntity && hasContext && score >= 45;
+  const supportive = frame.isAnalytical ? analyticalSupportive : concreteSupportive;
   const role = supportive ? (frame.isAnalytical ? "上下文语义支持" : "事实链语义支持") : score >= 42 ? "背景相关" : "弱相关";
   const reasons = [];
   if (entityMatches.length) reasons.push(`主体:${entityMatches.slice(0, 4).join(",")}`);
@@ -1496,9 +1540,10 @@ function scoreEvidence(bundle, input, localSignals) {
     const support = Math.max(semanticSupport, contextSupportScore(contextMatch, localSignals));
     const contradiction = contradictionScore(text, input.text, result.channelHint);
     const recency = recencyScore(result.publishedAt);
+    const freshness = evidenceFreshness(result.publishedAt, input, localSignals);
     const counterProbe = result.channelHint === "counter_evidence";
     const academicQuality = academicQualityScore(text, result.url, result.connector);
-    const finalScore = clamp(Math.round(tierInfo.score * 0.34 + relevance * 0.2 + support * 0.17 + contextMatch.score * 0.15 + recency * 0.1 + (tierInfo.channel === "academicEvidence" ? academicQuality * 0.1 : 0) + (counterProbe ? contradiction * 0.14 : 0) - contradiction * 0.2));
+    const finalScore = clamp(Math.round(tierInfo.score * 0.32 + relevance * 0.19 + support * 0.16 + contextMatch.score * 0.14 + recency * 0.16 + (tierInfo.channel === "academicEvidence" ? academicQuality * 0.1 : 0) + (counterProbe ? contradiction * 0.14 : 0) - contradiction * 0.2 - freshness.penalty));
     return {
       ...result,
       tier: tierInfo.tier,
@@ -1509,6 +1554,7 @@ function scoreEvidence(bundle, input, localSignals) {
       support,
       contradiction,
       recency,
+      freshness,
       academicQuality,
       contextMatch,
       contextScore: contextMatch.score,
@@ -1527,15 +1573,36 @@ function scoreEvidence(bundle, input, localSignals) {
     .sort((a, b) => b.contradiction - a.contradiction || b.score - a.score)
     .slice(0, 8);
   const channels = buildChannelScores(top, input, localSignals);
+  const supporting = top.filter((item) => item.stance === "支持" && supportEligibleForClaim(item, input, localSignals)).slice(0, 10);
   return {
     all: top,
-    supporting: top.filter((item) => item.stance === "支持").slice(0, 10),
+    supporting,
     refuting,
     background: top.filter((item) => item.stance === "背景").slice(0, 8),
     channels,
     contextFrame: claimFrame,
     duplicateClusters,
   };
+}
+
+function supportEligibleForClaim(item, input, localSignals) {
+  if (localSignals.timeSensitiveNews && !freshEnoughForSupport(item, input, localSignals)) return false;
+  if (!isOutcomeClaimRequiringConfirmation(input, localSignals)) return true;
+  const text = `${item.title || ""} ${item.snippet || ""} ${item.sourceName || ""}`.toLowerCase();
+  const host = hostname(item.url);
+  const strongSource = item.tier === "T0" || item.tier === "T1" || item.channel === "authoritativeStatement" || item.channel === "primaryRecord" || /reuters\.com|apnews\.com|bbc\.|bloomberg\.com|fifa\.com|the-afc\.com|thecfa\.cn/i.test(host);
+  return strongSource && outcomeConfirmationSignal(text, input.text) >= 65;
+}
+
+function freshEnoughForSupport(item, input, localSignals) {
+  if (hasHistoricalDateSignal(input.text)) return true;
+  const freshness = item.freshness || evidenceFreshness(item.publishedAt, input, localSignals);
+  if (freshness.level === "fresh" || freshness.level === "recent") return true;
+  const text = `${item.title || ""} ${item.snippet || ""} ${item.sourceName || ""}`.toLowerCase();
+  const host = hostname(item.url);
+  const primaryLiveSource = item.tier === "T0" || item.channel === "primaryRecord" || item.channel === "authoritativeStatement" || /reuters\.com|apnews\.com|bbc\.|bloomberg\.com|fifa\.com|the-afc\.com|thecfa\.cn/i.test(host);
+  if (freshness.level === "unknown") return primaryLiveSource && outcomeConfirmationSignal(text, input.text) >= 78;
+  return false;
 }
 
 function clusterSameStoryResults(items = [], input) {
@@ -1767,7 +1834,15 @@ function calculateCap(input, localSignals, evidence) {
   const supports = evidence.supporting;
   const strongChannels = evidence.channels.filter((channel) => channel.status === "已命中" && channel.score >= 75);
   const hasOfficialOrPrimary = evidence.all.some((item) => !item.inputSourceCluster && (item.tier === "T0" || item.channel === "authoritativeStatement" || item.channel === "primaryRecord"));
+  const strongSupportCount = supports.filter((item) => ["T0", "T1", "T2"].includes(item.tier)).length;
+  const weakSupportCount = supports.filter((item) => item.tier === "T3" || item.tier === "T4").length;
   const hasAcademicEvidence = evidence.channels.some((channel) => channel.id === "academicEvidence" && channel.status === "已命中");
+  const hasDirectOutcomeConfirmation = isOutcomeClaimRequiringConfirmation(input, localSignals) && evidence.supporting.some((item) => {
+    const text = `${item.title || ""} ${item.snippet || ""} ${item.sourceName || ""}`.toLowerCase();
+    const host = hostname(item.url);
+    const strongSource = item.tier === "T0" || item.tier === "T1" || item.channel === "authoritativeStatement" || item.channel === "primaryRecord" || /reuters\.com|apnews\.com|bbc\.|bloomberg\.com|fifa\.com|the-afc\.com|thecfa\.cn/i.test(host);
+    return strongSource && outcomeConfirmationSignal(text, input.text) >= 65;
+  });
   const mediaIntegrity = localSignals.mediaIntegrity;
   const caps = [];
   if (!supports.length) {
@@ -1776,6 +1851,9 @@ function calculateCap(input, localSignals, evidence) {
     caps.push({ value, note });
   }
   if (input.impact === "high" && strongChannels.length < 2) caps.push({ value: hasOfficialOrPrimary ? 84 : 69, note: "高影响需至少两个强渠道" });
+  if (supports.length && strongSupportCount === 0 && weakSupportCount > 0) caps.push({ value: input.impact === "high" ? 57 : 64, note: "缺少 T0-T2 权威来源，现有支持主要来自低等级来源" });
+  else if (input.impact === "high" && supports.length && strongSupportCount < 2) caps.push({ value: Math.min(hasOfficialOrPrimary ? 82 : 68, 82), note: "高影响信息需要至少两个 T0-T2 独立来源" });
+  if (isOutcomeClaimRequiringConfirmation(input, localSignals) && !hasDirectOutcomeConfirmation) caps.push({ value: isSportsQualificationClaim(input.text) ? 42 : 52, note: "结果型短讯缺少官方 / 主流媒体直接确认" });
   if (localSignals.needsAcademicEvidence && !hasAcademicEvidence) caps.push({ value: input.impact === "high" ? 62 : 72, note: "科学/医疗类缺少学术或指南证据" });
   if (localSignals.extremePercent) caps.push({ value: 59, note: "统计异常需强证据" });
   if (mediaIntegrity?.criticalForgeryRisk && !hasOfficialOrPrimary) caps.push({ value: 58, note: "上传素材存在 PS/AI 造假高风险" });
@@ -1866,8 +1944,16 @@ function buildEvidenceRows(input, localSignals, evidence) {
   if (localSignals.shortAtomicClaim) rows.push(["中性", "短句已识别为可直接核验的信息", "+"]);
   if (localSignals.englishNetworkEnabled) rows.push(["中性", `已启用英语信息网络交叉验证：${localSignals.englishConcepts.slice(0, 5).join(", ") || "通用英语检索"}`, "+"]);
   if (localSignals.analysisClaim && evidence.supporting.length) rows.push(["支持", "分析型报道：按同一事件链 / 政策背景做语义交叉支持", "+"]);
+  if (localSignals.timeSensitiveNews) {
+    const freshness = aggregateFreshnessSignal(evidence.supporting.length ? evidence.supporting : evidence.all);
+    rows.push([freshness.supportive ? "支持" : "中性", `时间置信：${freshness.label} · ${freshness.note}`, `${freshness.score}`]);
+  }
   const contextSignal = aggregateContextSignal(evidence.all);
-  if (contextSignal.count) rows.push(["支持", `上下文深度匹配：${contextSignal.count} 条相关证据，${contextSignal.diversity} 个来源`, `${contextSignal.score}`]);
+  if (contextSignal.count) {
+    const direction = evidence.supporting.length ? "支持" : "中性";
+    const label = evidence.supporting.length ? "上下文深度匹配" : "背景上下文匹配";
+    rows.push([direction, `${label}：${contextSignal.count} 条相关证据，${contextSignal.diversity} 个来源`, `${contextSignal.score}`]);
+  }
   if (evidence.duplicateClusters?.length) {
     const duplicateCount = evidence.duplicateClusters.reduce((sum, cluster) => sum + cluster.count - 1, 0);
     rows.push(["中性", `同源转载已聚类：${evidence.duplicateClusters.length} 组，${duplicateCount} 条转载不计为独立支持`, "0"]);
@@ -1900,9 +1986,16 @@ function buildRiskRows(input, localSignals, evidence, bundle) {
   const strongChannels = evidence.channels.filter((channel) => channel.status === "已命中" && channel.score >= 75);
   const externalEvidence = evidence.all.filter((item) => !item.inputSourceCluster);
   if (input.impact === "high" && strongChannels.length < 2) rows.push(["交叉", "高影响信息缺少两个强验证渠道", "-"]);
+  if (evidence.supporting.length && !evidence.supporting.some((item) => ["T0", "T1", "T2"].includes(item.tier))) rows.push(["来源", "支持证据主要来自 T3/T4 来源，缺少权威来源确认", "-"]);
   if (!evidence.supporting.length) rows.push(["检索", localSignals.specificNamedEvent ? "具体人物 / 机构事件未找到直接支持，降为低可信" : "未找到支持证据，保持待验证", "-"]);
   const academicChannel = evidence.channels.find((channel) => channel.id === "academicEvidence");
   if (localSignals.needsAcademicEvidence && academicChannel?.status !== "已命中") rows.push(["学术", "该类信息需要学术论文、指南或注册试验辅助验证", "-"]);
+  if (localSignals.timeSensitiveNews) {
+    const staleSupports = evidence.all.filter((item) => item.stance === "支持" && item.freshness?.level === "stale");
+    const unknownFreshness = evidence.all.filter((item) => item.stance === "支持" && item.freshness?.level === "unknown");
+    if (staleSupports.length) rows.push(["时间", `发现 ${staleSupports.length} 条旧新闻支持线索，实时新闻中已降权`, "-"]);
+    if (!evidence.supporting.length && unknownFreshness.length) rows.push(["时间", "部分网页缺少发布时间，不能作为实时新闻的直接支持", "-"]);
+  }
   if (localSignals.analysisClaim && !externalEvidence.some((item) => item.contextScore >= 55)) rows.push(["上下文", "未找到足够的同主体 / 同事件链 / 同政策背景证据", "-"]);
   if (evidence.duplicateClusters?.length) rows.push(["同源", `发现 ${evidence.duplicateClusters.length} 组同源转载，已去重并只按代表来源计分`, "0"]);
   if (evidence.refuting.length) rows.push(["冲突", `发现 ${evidence.refuting.length} 条疑似反证或旧反证`, "-"]);
@@ -1912,7 +2005,8 @@ function buildRiskRows(input, localSignals, evidence, bundle) {
     }
   }
   if (bundle.counterQueries?.length) rows.push(["反证", `已主动执行 ${bundle.counterQueries.length} 条证伪检索式`, "0"]);
-  if (bundle.errors.length) rows.push(["连接器", `${bundle.errors.length} 个检索连接器失败`, "-"]);
+  const errorSummary = bundle.errorSummary || summarizeSearchErrors(bundle.errors);
+  if (errorSummary.length) rows.push(["连接器", `${errorSummary.length} 个检索连接器失败（${errorSummary.slice(0, 2).map((item) => `${item.connector}×${item.count}`).join("，")}）`, "-"]);
   if (localSignals.extremePercent) rows.push(["统计", "数字显著异常，需要硬证据", "-"]);
   if (!rows.length) rows.push(["低", "未触发主要风险项", "0"]);
   return rows;
@@ -2370,6 +2464,9 @@ function semanticConceptGroups(claim) {
   add(/主席|chair|chairman/i, [/chair|chairman|主席/]);
   add(/卸任|任期|交接|继任|接棒|接任|successor|succession|transition|term/i, [/term ends|term expires|chair term|successor|succession|succeed|replace|replacement|transition|handover|卸任|任期|交接|继任|接棒|接任/]);
   add(/沃什|warsh/i, [/warsh|沃什/]);
+  add(/中国队|国足|中国男足|男足|中国足球/i, [/china national football team|chinese national football team|chinese men's football team|china soccer team|team china football|中国队|国足|中国男足|男足|中国足球/]);
+  add(/世界杯|world cup|fifa world cup/i, [/fifa world cup|world cup|世界杯/]);
+  add(/进世界杯|晋级|出线|入围|获得资格|qualified|qualify|qualification|advance/i, [/qualif(?:y|ied|ication)|advance|book(?:ed)?\s+(?:a\s+)?place|secure(?:d)?\s+(?:a\s+)?spot|晋级|出线|入围|获得资格|进世界杯/]);
   add(/利率|降息|加息|按兵不动|维持|会议|发布会|interest rate|rate cut|hold rates|press conference/i, [/interest rate|rates|rate cut|hold rates|keeps rates|unchanged|fomc|meeting|press conference|利率|降息|加息|维持|会议|发布会|按兵不动/]);
   add(/独立性|政治压力|特朗普|共和党|independence|political pressure|trump/i, [/independence|independent|political pressure|legal attack|trump|republican|独立性|政治压力|特朗普|共和党/]);
   add(/分歧|反对票|投票|dissent|split vote|vote/i, [/dissent|split vote|divided|division|vote|voted|反对票|投票|分歧|分裂/]);
@@ -2407,6 +2504,7 @@ function claimEntityPatterns(claim) {
   if (/美联储|联邦储备|fed|federal reserve|fomc/i.test(claim)) patterns.push(/federal reserve|\bfed\b|fomc|美联储|联邦储备/);
   if (/沃什|warsh/i.test(claim)) patterns.push(/warsh|kevin warsh|沃什/);
   if (/特朗普|trump/i.test(claim)) patterns.push(/trump|特朗普/);
+  if (/中国队|国足|中国男足|男足|中国足球/i.test(claim)) patterns.push(/china national football team|chinese national football team|chinese men's football team|china soccer team|team china football|中国队|国足|中国男足|男足|中国足球/);
   if (/疫苗|vaccine/i.test(claim)) patterns.push(/vaccine|vaccination|疫苗|接种/);
   if (/自闭症|autism/i.test(claim)) patterns.push(/autism|autistic|自闭症/);
   if (/新冠|covid|冠状病毒/i.test(claim)) patterns.push(/covid|sars-cov-2|coronavirus|新冠|冠状病毒/);
@@ -2431,6 +2529,8 @@ function claimActionPatterns(claim) {
   if (/制裁|sanction/i.test(claim)) patterns.push(/sanction|制裁/);
   if (/收购|acquire|acquisition/i.test(claim)) patterns.push(/acquir|acquisition|buy|merge|收购|并购/);
   if (/辞职|resign/i.test(claim)) patterns.push(/resign|step down|辞职/);
+  if (/进世界杯|晋级|出线|入围|获得资格|qualified|qualify|qualification|advance/i.test(claim)) patterns.push(/qualif(?:y|ied|ication)|advance|book(?:ed)?\s+(?:a\s+)?place|secure(?:d)?\s+(?:a\s+)?spot|晋级|出线|入围|获得资格|进世界杯/);
+  if (/世界杯|world cup|fifa world cup/i.test(claim)) patterns.push(/fifa world cup|world cup|世界杯/);
   return uniquePatterns(patterns);
 }
 
@@ -2471,6 +2571,44 @@ function recencyScore(value) {
   if (days <= 90) return 72;
   if (days <= 365) return 58;
   return 36;
+}
+
+function evidenceFreshness(value, input, localSignals) {
+  if (!localSignals?.timeSensitiveNews || hasHistoricalDateSignal(input.text)) {
+    return { level: "not_required", score: recencyScore(value), penalty: 0, days: null, label: "不强制" };
+  }
+  if (!value) return { level: "unknown", score: 50, penalty: 10, days: null, label: "缺少时间" };
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return { level: "unknown", score: 48, penalty: 12, days: null, label: "时间不可读" };
+  const days = Math.abs(CURRENT_DATE - parsed) / 86400000;
+  if (days <= 14) return { level: "fresh", score: 96, penalty: 0, days, label: "新近" };
+  if (days <= 60) return { level: "recent", score: 78, penalty: 2, days, label: "较新" };
+  if (days <= 180) return { level: "aging", score: 58, penalty: 12, days, label: "偏旧" };
+  return { level: "stale", score: 34, penalty: 28, days, label: "旧新闻" };
+}
+
+function aggregateFreshnessSignal(items = []) {
+  const relevant = items.filter((item) => item && !item.inputSourceCluster).slice(0, 12);
+  if (!relevant.length) return { score: 45, label: "证据不足", note: "没有可用于判断时间的新近证据", supportive: false };
+  const levels = relevant.map((item) => item.freshness?.level || "unknown");
+  const fresh = levels.filter((level) => level === "fresh").length;
+  const recent = levels.filter((level) => level === "recent").length;
+  const stale = levels.filter((level) => level === "stale" || level === "aging").length;
+  const unknown = levels.filter((level) => level === "unknown").length;
+  const avg = Math.round(relevant.reduce((sum, item) => sum + (item.freshness?.score ?? item.recency ?? 50), 0) / relevant.length);
+  if (fresh || recent) return { score: clamp(avg + Math.min(12, (fresh + recent) * 3)), label: fresh ? "新近证据" : "较新证据", note: `${fresh + recent} 条新近 / 较新证据`, supportive: true };
+  if (stale) return { score: clamp(avg - Math.min(18, stale * 4)), label: "证据偏旧", note: `${stale} 条偏旧或旧新闻，实时验证中已降权`, supportive: false };
+  return { score: clamp(avg - 8), label: "时间不明", note: `${unknown || relevant.length} 条证据缺少明确发布时间`, supportive: false };
+}
+
+function hasHistoricalDateSignal(text) {
+  const years = String(text || "").match(/\b(19\d{2}|20\d{2})\b|(?:19\d{2}|20\d{2})年/g) || [];
+  if (!years.length) return false;
+  const currentYear = CURRENT_DATE.getFullYear();
+  return years.some((raw) => {
+    const year = Number(String(raw).replace(/[^\d]/g, ""));
+    return year && year <= currentYear - 2;
+  });
 }
 
 function analyzeMediaIntegrity(media = []) {
@@ -2661,6 +2799,7 @@ function extractLocalSignals(input) {
     mediaIntegrity,
     specificNamedEvent: isSpecificNamedEvent(input),
     analysisClaim: /(观察|分析|评论|三重|主线|考验|影响|意味着|前景|why it matters|analysis|opinion|explainer|takeaway)/i.test(text),
+    timeSensitiveNews: isTimeSensitiveNews(input),
     englishNetworkEnabled: englishContext.enabled,
     englishConcepts: englishContext.concepts.map((concept) => concept.id),
     needsAcademicEvidence: academicNeed.needed,
@@ -2670,15 +2809,30 @@ function extractLocalSignals(input) {
   };
 }
 
+function isTimeSensitiveNews(input) {
+  const text = `${input.text || ""} ${input.sourceName || ""}`.trim();
+  if (hasHistoricalDateSignal(text)) return false;
+  if (detectAcademicNeed(input).needed) return false;
+  if (/(最新|今日|今天|刚刚|突发|实时|目前|当地时间|北京时间|now|today|latest|breaking|current)/i.test(text)) return true;
+  if (isSpecificNamedEvent(input)) return true;
+  return input.type === "event" && input.impact === "high" && text.replace(/\s+/g, "").length <= 160;
+}
+
 function isSpecificNamedEvent(input) {
   const text = `${input.text || ""} ${input.sourceName || ""}`.trim();
-  const hasConcreteAction = /宣布|确认|发布|退出|卸任|任命|签约|收购|制裁|起诉|调查|访问|到访|拜访|参访|考察|会见|announce|confirm|release|withdraw|resign|appoint|sign|acquire|sanction|sue|probe|visit|visited|meet|met/i.test(text);
+  const hasConcreteAction = /宣布|确认|发布|退出|卸任|任命|签约|收购|制裁|起诉|调查|访问|到访|拜访|参访|考察|会见|晋级|出线|入围|获得资格|进世界杯|announce|confirm|release|withdraw|resign|appoint|sign|acquire|sanction|sue|probe|visit|visited|meet|met|qualified|qualify|advance/i.test(text);
   const hasNamedEntity = /[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*|[\u4e00-\u9fa5]{2,}/.test(text);
   const isShortEnough = text.replace(/\s+/g, "").length <= 120;
   return Boolean(hasConcreteAction && hasNamedEntity && isShortEnough);
 }
 
 function stanceForEvidence({ support, contradiction, resultText, input, localSignals, contextMatch }) {
+  if (isOutcomeClaimRequiringConfirmation(input, localSignals)) {
+    const outcomeSignal = outcomeConfirmationSignal(resultText, input.text);
+    if (outcomeSignal <= -45 || (contradiction > 55 && currentRefutationEvidence(resultText))) return "反驳";
+    if (outcomeSignal >= 65 && contradiction < 55) return "支持";
+    return "背景";
+  }
   if (localSignals.negatedClaim) {
     const affirmativeEvidence = affirmativeClaimEvidence(resultText, input.text);
     const negativeEvidence = negativeClaimEvidence(resultText, input.text);
@@ -2690,6 +2844,61 @@ function stanceForEvidence({ support, contradiction, resultText, input, localSig
   if (support > 55 && contradiction < 55) return "支持";
   if (contextMatch?.supportive && contradiction < 55) return "支持";
   return "背景";
+}
+
+function isOutcomeClaimRequiringConfirmation(input, localSignals) {
+  const text = `${input.text || ""} ${input.sourceName || ""}`;
+  if (localSignals.analysisClaim || localSignals.negatedClaim) return false;
+  if (localSignals.needsAcademicEvidence) return false;
+  if (isSportsQualificationClaim(text)) return true;
+  const concreteAction = /宣布|确认|发布|退出|卸任|离任|辞职|任命|签约|收购|并购|制裁|起诉|调查|访问|到访|拜访|参访|考察|会见|抵达|达成|批准|通过|生效|启动|关闭|停产|召回|announce|confirm|release|withdraw|resign|step down|appoint|sign|acquire|merger|sanction|sue|probe|visit|visited|meet|met|arrive|approve|launch|shut down|recall/i.test(text);
+  const shortConcrete = text.replace(/\s+/g, "").length <= 140;
+  return Boolean(localSignals.specificNamedEvent && concreteAction && shortConcrete);
+}
+
+function isSportsQualificationClaim(text) {
+  const value = String(text || "");
+  const team = /中国队|国足|中国男足|男足|中国足球|china national football team|chinese national football team|china soccer team/i.test(value);
+  const worldCup = /世界杯|world cup|fifa world cup/i.test(value);
+  const qualification = /进世界杯|晋级|出线|入围|获得资格|qualified|qualify|qualification|advance/i.test(value);
+  return team && worldCup && qualification;
+}
+
+function sportsQualificationEvidenceSignal(text) {
+  const value = String(text || "").toLowerCase();
+  const hasTeam = /china national football team|chinese national football team|chinese men's football team|china soccer team|team china football|中国队|国足|中国男足|男足|中国足球/.test(value);
+  const hasWorldCup = /fifa world cup|world cup|世界杯/.test(value);
+  const hasConfirmedQualification = /qualified\s+for|qualifies\s+for|qualification\s+(?:secured|confirmed)|book(?:ed)?\s+(?:a\s+)?(?:place|spot).*world cup|secure(?:d)?\s+(?:a\s+)?spot.*world cup|advance(?:d)?\s+to.*world cup|晋级|出线|入围|获得资格|进世界杯/.test(value);
+  const hasCurrentContext = /\b20(?:25|26)\b|2025年|2026年|latest|current|today|最新|目前|当地时间|北京时间|本届|预选赛|qualifiers?/.test(value);
+  const negative = /failed\s+to\s+qualify|miss(?:es|ed)?\s+(?:out\s+on\s+)?(?:the\s+)?world cup|eliminated|out\s+of\s+contention|无缘世界杯|无缘|出局|未能出线|未晋级/.test(value);
+  const speculative = /could|may|might|expected|aim|hope|goal|target|prediction|rumou?r|beyond qualifying|dead-rubber|\bif\b|as long as|保送|下一场|目标|有望|可能|预测|争取|冲击|若|如果|能进吗|凭什么|形势|备战|分析/.test(value);
+  let score = 0;
+  if (hasTeam) score += 24;
+  if (hasWorldCup) score += 24;
+  if (hasConfirmedQualification) score += 36;
+  if (/official|fifa|afc|reuters|ap news|bbc|cctv|足协|官方|宣布|确认|声明/.test(value)) score += 12;
+  if (!hasCurrentContext) score = Math.min(score, 52);
+  if (speculative) score = Math.min(score - 36, 44);
+  if (negative) score -= 80;
+  return clamp(score);
+}
+
+function outcomeConfirmationSignal(text, claim) {
+  if (isSportsQualificationClaim(claim)) return sportsQualificationEvidenceSignal(text);
+  const value = String(text || "").toLowerCase();
+  const entity = entityOverlapScore(value, claim);
+  const action = actionOverlapScore(value, claim);
+  const semantic = semanticOverlapScore(value, claim);
+  const hasConfirmLanguage = /official|confirm|confirmed|announce|announced|statement|press release|filing|effective|said on|according to|reported|官方|确认|证实|宣布|声明|公告|文件|生效|据.*报道/.test(value);
+  const hasCurrentContext = /\b20(?:25|26)\b|2025年|2026年|latest|current|today|now|最新|目前|今日|今天|当地时间|北京时间|本周|本月/.test(value) || !/\b20\d{2}\b|20\d{2}年/.test(claim);
+  const speculative = /could|may|might|expected|reportedly|rumou?r|unconfirmed|source said|people familiar|if\b|plan to|consider|aim|hope|target|prediction|或将|可能|预计|据传|网传|消息人士|知情人士|未经证实|若|如果|计划|考虑|目标|有望|预测/.test(value);
+  const denial = /deny|denied|no plan|not true|false|fake|hoax|debunk|correction|retraction|否认|没有计划|不实|假的|谣言|辟谣|更正|撤稿/.test(value);
+  let score = Math.round(entity * 0.42 + action * 0.5 + semantic * 0.2);
+  if (hasConfirmLanguage) score += 16;
+  if (hasCurrentContext) score += 8;
+  if (speculative) score = Math.min(score - 28, 48);
+  if (denial) score -= 75;
+  return clamp(score);
 }
 
 function isNegatedClaim(text) {
