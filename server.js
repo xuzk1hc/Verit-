@@ -24,7 +24,7 @@ const SERPAPI_KEY = process.env.SERPAPI_KEY || "";
 const NEWSAPI_KEY = process.env.NEWSAPI_KEY || "";
 const GOOGLE_NEWS_RSS_ENABLED = process.env.VERITE_GOOGLE_NEWS_RSS === "1";
 const CURRENT_DATE = new Date();
-const USER_AGENT = "Verite/0.2 (+local fact-check research tool)";
+const USER_AGENT = "La-verite/0.2 (+local fact-check research tool)";
 
 async function loadEnvFile(fileName) {
   let text = "";
@@ -258,7 +258,7 @@ createServer(async (req, res) => {
     if (req.url === "/api/health") {
       return sendJson(res, {
         ok: true,
-        service: "Verité backend",
+        service: "La vérité backend",
         online: true,
         aiCommitteeEnabled: AI_COMMITTEE_ENABLED,
         aiApiKeyConfigured: AI_API_KEY_CONFIGURED,
@@ -285,7 +285,7 @@ createServer(async (req, res) => {
   }
 }).listen(PORT, HOST, () => {
   const displayHost = HOST === "0.0.0.0" ? "127.0.0.1" : HOST;
-  console.log(`Verité backend running at http://${displayHost}:${PORT}`);
+  console.log(`La vérité backend running at http://${displayHost}:${PORT}`);
 });
 
 async function checkClaim(payload) {
@@ -1352,7 +1352,7 @@ async function searchPubMed(query) {
     retmode: "json",
     retmax: "8",
     sort: "relevance",
-    tool: "verite",
+    tool: "la-verite",
   });
   const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?${searchParams.toString()}`;
   const searchJson = await fetchJson(searchUrl);
@@ -1363,7 +1363,7 @@ async function searchPubMed(query) {
     db: "pubmed",
     id: ids.join(","),
     retmode: "json",
-    tool: "verite",
+    tool: "la-verite",
   });
   const summaryUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?${summaryParams.toString()}`;
   const summaryJson = await fetchJson(summaryUrl);

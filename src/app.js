@@ -384,7 +384,7 @@ async function analyzeWithBackend(payload) {
     updateBackendBadge(`联网后端 · ${data.diagnostics?.rawResultCount ?? 0} 条`, true);
     return data.report;
   } catch (error) {
-    console.warn("Verité backend unavailable, using local fallback:", error);
+    console.warn("La vérité backend unavailable, using local fallback:", error);
     updateBackendBadge("本地回退", false);
     return null;
   }

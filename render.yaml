@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: verite
+    name: la-verite
     runtime: docker
     plan: free
     healthCheckPath: /api/health

@@ -176,7 +176,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/health":
             self.send_json({"ok": False, "error": "not found"}, 404)
             return
-        self.send_json({"ok": True, "service": "Verite media AI", "pillow": PIL_AVAILABLE, "model": MODEL_NAME or "heuristic"})
+        self.send_json({"ok": True, "service": "La vérité media AI", "pillow": PIL_AVAILABLE, "model": MODEL_NAME or "heuristic"})
 
     def do_POST(self) -> None:
         if self.path != "/analyze":
@@ -198,7 +198,7 @@ class Handler(BaseHTTPRequestHandler):
                 })
         self.send_json({
             "ok": True,
-            "engine": "verite-lightweight-forensics",
+            "engine": "la-verite-lightweight-forensics",
             "model": MODEL_NAME or "ELA+frequency heuristic",
             "samples": samples,
         })
@@ -217,5 +217,5 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"Verite media AI service running at http://127.0.0.1:{PORT}")
+    print(f"La vérité media AI service running at http://127.0.0.1:{PORT}")
     server.serve_forever()

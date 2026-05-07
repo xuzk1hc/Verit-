@@ -1,5 +1,5 @@
 version: 2
-name: verite_fact_check_rules
+name: la_verite_fact_check_rules
 description: >
   Multi-angle verification rules for user-uploaded text, images, videos,
   screenshots, and news links. Each case is decomposed into atomic claims and

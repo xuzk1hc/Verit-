@@ -1,10 +1,10 @@
-# Verité 公网部署
+# La vérité 公网部署
 
-Verité 是一个后端渲染静态前端的 Node 服务，并可选启动本地 Python 媒介取证服务。公网部署建议使用 Docker，这样主站和媒介取证服务可以在同一个容器内运行。
+La vérité 是一个后端渲染静态前端的 Node 服务，并可选启动本地 Python 媒介取证服务。公网部署建议使用 Docker，这样主站和媒介取证服务可以在同一个容器内运行。
 
 ## 推荐方案：Render
 
-1. 把 `Verite` 目录推到 GitHub 仓库。
+1. 把 `La vérité` 项目目录推到 GitHub 仓库。
 2. 打开 Render，选择 `New` -> `Blueprint`。
 3. 选择仓库，Render 会读取 `render.yaml`。
 4. 创建服务后等待构建完成。
@@ -33,7 +33,7 @@ NEWSAPI_KEY=...
 VERITE_GOOGLE_NEWS_RSS=0
 ```
 
-这些变量都可以留空。只要配置其中任意一个，Verité 后端就会在 GDELT、DuckDuckGo、PubMed、Crossref 等公开连接器之外，额外调用对应正式 API，并把结果纳入同一套交叉验证评分。
+这些变量都可以留空。只要配置其中任意一个，La vérité 后端就会在 GDELT、DuckDuckGo、PubMed、Crossref 等公开连接器之外，额外调用对应正式 API，并把结果纳入同一套交叉验证评分。
 
 `VERITE_GOOGLE_NEWS_RSS` 默认等同于 `0`。Render 等云端环境经常被 Google News RSS 限流或封锁，建议保持关闭；只有在本地或可稳定访问的服务器上，才设置为 `1`。
 
@@ -51,11 +51,11 @@ VERITE_GOOGLE_NEWS_RSS=0
 在服务器上执行：
 
 ```bash
-docker build -t verite .
-docker run -d --name verite -p 8787:8787 \
+docker build -t la-verite .
+docker run -d --name la-verite -p 8787:8787 \
   -e HOST=0.0.0.0 \
   -e VERITE_MEDIA_AI=1 \
-  verite
+   la-verite
 ```
 
 然后访问：
@@ -92,7 +92,7 @@ VERITE_AI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 VERITE_AI_MODEL=qwen-plus
 ```
 
-平台会提供自己的 `PORT`，Verité 会自动读取。
+平台会提供自己的 `PORT`，La vérité 会自动读取。
 
 ## 注意事项
 
