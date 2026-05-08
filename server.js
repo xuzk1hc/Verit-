@@ -23,10 +23,14 @@ const GOOGLE_CSE_ID = process.env.GOOGLE_CSE_ID || "";
 const SERPAPI_KEY = process.env.SERPAPI_KEY || "";
 const NEWSAPI_KEY = process.env.NEWSAPI_KEY || "";
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
+const BRAVE_SEARCH_API_KEY = process.env.BRAVE_SEARCH_API_KEY || "";
+const WIKIMEDIA_API_TOKEN = process.env.WIKIMEDIA_API_TOKEN || "";
 const GOOGLE_NEWS_RSS_ENABLED = process.env.VERITE_GOOGLE_NEWS_RSS === "1";
+const CONNECTOR_BACKOFF_MS = Number(process.env.VERITE_CONNECTOR_BACKOFF_MS || 60000);
 const CURRENT_DATE = new Date();
 const USER_AGENT = "La-verite/0.2 (+local fact-check research tool)";
-const SECRET_VALUES = [AI_API_KEY, BING_SEARCH_API_KEY, GOOGLE_CSE_API_KEY, GOOGLE_CSE_ID, SERPAPI_KEY, NEWSAPI_KEY, TAVILY_API_KEY].filter(Boolean);
+const SECRET_VALUES = [AI_API_KEY, BING_SEARCH_API_KEY, GOOGLE_CSE_API_KEY, GOOGLE_CSE_ID, SERPAPI_KEY, NEWSAPI_KEY, TAVILY_API_KEY, BRAVE_SEARCH_API_KEY, WIKIMEDIA_API_TOKEN].filter(Boolean);
+const connectorBackoffUntil = new Map();
 
 async function loadEnvFile(fileName) {
   let text = "";
@@ -524,7 +528,8 @@ async function runSearchPlan(input) {
   const allSpecs = buildRetrievalJobSpecs(input, queries);
 
   const runStage = async (name, specs) => {
-    const runnable = specs.filter((spec) => spec.query !== "" && !executed.has(spec.key));
+    const candidates = specs.filter((spec) => spec.query !== "" && !executed.has(spec.key) && !isConnectorInBackoff(spec.connector));
+    const runnable = limitProbeConnectors(candidates);
     if (!runnable.length) return evaluateRetrievalState(raw, input);
     for (const spec of runnable) {
       executed.add(spec.key);
@@ -535,7 +540,12 @@ async function runSearchPlan(input) {
     const settled = await Promise.allSettled(runnable.map((spec) => withTimeout(spec.make(), spec.timeout || 9000)));
     for (const [index, item] of settled.entries()) {
       if (item.status === "fulfilled") raw.push(...(item.value.results || []));
-      else errors.push({ connector: runnable[index]?.connector || "unknown", message: redactSecrets(item.reason?.message || String(item.reason)) });
+      else {
+        const connector = runnable[index]?.connector || "unknown";
+        const message = redactSecrets(item.reason?.message || String(item.reason));
+        registerConnectorBackoff(connector, message);
+        errors.push({ connector, message });
+      }
     }
     const state = evaluateRetrievalState(raw, input);
     stages.push({
@@ -609,6 +619,7 @@ function buildRetrievalJobSpecs(input, queries) {
     timeout,
   });
   const ddg = (query, hint = "web") => job(hint === "web" ? "duckduckgo_web" : hint, query, () => searchDuckDuckGo(query, hint));
+  const mojeek = (query, hint = "web") => job(hint === "web" ? "mojeek_web" : `mojeek_${hint}`, query, () => searchMojeek(query, hint));
   const gnews = (query, hint = "news") => GOOGLE_NEWS_RSS_ENABLED ? [job(hint === "news" ? "google_news_rss" : hint, query, () => searchGoogleNews(query, hint))] : [];
   const gdelt = (query, hint = "gdelt_news") => job(hint === "gdelt_news" ? "gdelt_news" : hint, query, () => searchGdelt(query, hint));
   const reddit = (query) => job("reddit", query, () => searchReddit(query));
@@ -622,20 +633,26 @@ function buildRetrievalJobSpecs(input, queries) {
     foundation.push(...apiWeb(query, "web"));
     foundation.push(...gnews(query));
     foundation.push(ddg(query, "web"));
+    foundation.push(mojeek(query, "web"));
   }
   for (const query of queries.englishNetwork.slice(0, 2)) {
     foundation.push(...apiNews(query, "english_network"));
     foundation.push(...apiWeb(query, "english_network"));
     foundation.push(...gnews(query, "english_network"));
     foundation.push(ddg(query, "english_network"));
+    foundation.push(mojeek(query, "english_network"));
   }
   for (const query of queries.counterEvidence.slice(0, 2)) {
     foundation.push(...apiNews(query, "counter_evidence"));
     foundation.push(...apiWeb(query, "counter_evidence"));
     foundation.push(...gnews(query, "counter_evidence"));
     foundation.push(ddg(query, "counter_evidence"));
+    foundation.push(mojeek(query, "counter_evidence"));
   }
-  if (queries.academicNeeded && queries.academic[0]) foundation.push(job("pubmed", queries.academic[0], () => searchPubMed(queries.academic[0])));
+  if (queries.academicNeeded && queries.academic[0]) {
+    foundation.push(job("pubmed", queries.academic[0], () => searchPubMed(queries.academic[0])));
+    foundation.push(job("arxiv", queries.academic[0], () => searchArxiv(queries.academic[0])));
+  }
 
   const standard = [];
   for (const query of queries.primary.slice(3, 7)) {
@@ -643,6 +660,7 @@ function buildRetrievalJobSpecs(input, queries) {
     standard.push(...gnews(query));
     standard.push(gdelt(query));
     standard.push(ddg(query, "web"));
+    standard.push(mojeek(query, "web"));
   }
   for (const query of queries.englishNetwork.slice(2, 5)) {
     standard.push(...apiNews(query, "english_network"));
@@ -650,61 +668,74 @@ function buildRetrievalJobSpecs(input, queries) {
     standard.push(...gnews(query, "english_network"));
     standard.push(gdelt(query, "english_network"));
     standard.push(ddg(query, "english_network"));
+    standard.push(mojeek(query, "english_network"));
   }
   for (const query of queries.official.slice(0, 4)) {
     standard.push(...apiWeb(query, "official"));
     standard.push(ddg(query, "official"));
+    standard.push(mojeek(query, "official"));
   }
   for (const query of queries.realWorld.slice(0, 3)) {
     standard.push(...apiWeb(query, "real_world"));
     standard.push(ddg(query, "real_world"));
+    standard.push(mojeek(query, "real_world"));
   }
   for (const query of queries.counterEvidence.slice(2, 7)) {
     standard.push(...apiNews(query, "counter_evidence"));
     standard.push(...apiWeb(query, "counter_evidence"));
     standard.push(...gnews(query, "counter_evidence"));
     standard.push(ddg(query, "counter_evidence"));
+    standard.push(mojeek(query, "counter_evidence"));
   }
   for (const query of queries.academic.slice(1, 3)) {
     standard.push(job("pubmed", query, () => searchPubMed(query)));
     standard.push(job("crossref", query, () => searchCrossref(query)));
+    standard.push(job("arxiv", query, () => searchArxiv(query)));
   }
 
   const expanded = [];
   for (const query of queries.primary.slice(7)) {
     expanded.push(...apiWeb(query, "web"));
     expanded.push(ddg(query, "web"));
+    expanded.push(mojeek(query, "web"));
   }
   for (const query of queries.englishNetwork.slice(5)) {
     expanded.push(...apiNews(query, "english_network"));
     expanded.push(...gnews(query, "english_network"));
     expanded.push(ddg(query, "english_network"));
+    expanded.push(mojeek(query, "english_network"));
   }
   for (const query of queries.official.slice(4)) {
     expanded.push(...apiWeb(query, "official"));
     expanded.push(ddg(query, "official"));
+    expanded.push(mojeek(query, "official"));
   }
   for (const query of queries.realWorld.slice(3)) {
     expanded.push(...apiWeb(query, "real_world"));
     expanded.push(ddg(query, "real_world"));
+    expanded.push(mojeek(query, "real_world"));
   }
   for (const query of queries.social) {
     expanded.push(...apiWeb(query, "social"));
     expanded.push(ddg(query, "social"));
+    expanded.push(mojeek(query, "social"));
     expanded.push(reddit(query));
   }
   for (const query of queries.selfMedia) {
     expanded.push(...apiWeb(query, "self_media"));
     expanded.push(ddg(query, "self_media"));
+    expanded.push(mojeek(query, "self_media"));
   }
   for (const query of queries.academic.slice(3)) {
     expanded.push(job("pubmed", query, () => searchPubMed(query)));
     expanded.push(job("crossref", query, () => searchCrossref(query)));
+    expanded.push(job("arxiv", query, () => searchArxiv(query)));
     expanded.push(ddg(query, "academic"));
   }
   for (const query of queries.counterEvidence.slice(7)) {
     expanded.push(...gnews(query, "counter_evidence"));
     expanded.push(ddg(query, "counter_evidence"));
+    expanded.push(mojeek(query, "counter_evidence"));
   }
 
   return {
@@ -740,10 +771,45 @@ function summarizeSearchErrors(errors = []) {
 }
 
 function normalizeErrorConnector(connector) {
-  if (/gdelt|english_network/.test(connector)) return "gdelt_news";
+  if (/brave/.test(connector)) return connector;
+  if (/wikimedia/.test(connector)) return connector;
+  if (/tavily/.test(connector)) return connector;
+  if (/mojeek/.test(connector)) return connector;
+  if (/arxiv/.test(connector)) return connector;
+  if (/gdelt/.test(connector)) return "gdelt_news";
   if (/google_news/.test(connector)) return "google_news_rss";
   if (/duckduckgo|ddg/.test(connector)) return "duckduckgo";
   return connector || "unknown";
+}
+
+function limitProbeConnectors(specs) {
+  const counts = new Map();
+  return specs.filter((spec) => {
+    const group = connectorBackoffGroup(spec.connector);
+    if (group !== "mojeek") return true;
+    const count = counts.get(group) || 0;
+    if (count >= 2) return false;
+    counts.set(group, count + 1);
+    return true;
+  });
+}
+
+function connectorBackoffGroup(connector = "") {
+  if (/^mojeek/.test(connector)) return "mojeek";
+  return connector || "unknown";
+}
+
+function isConnectorInBackoff(connector) {
+  const until = connectorBackoffUntil.get(connectorBackoffGroup(connector)) || 0;
+  return until > Date.now();
+}
+
+function registerConnectorBackoff(connector, message = "") {
+  const group = connectorBackoffGroup(connector);
+  if (group !== "mojeek") return;
+  if (!/(?:403|429|too many requests|forbidden|timeout|socket|ssl|network)/i.test(message)) return;
+  const current = connectorBackoffUntil.get(group) || 0;
+  connectorBackoffUntil.set(group, Math.max(current, Date.now() + CONNECTOR_BACKOFF_MS));
 }
 
 function redactSecrets(value) {
@@ -762,15 +828,16 @@ function officialSearchApiJobs(query, channelHint, job) {
   const jobs = [];
   if (BING_SEARCH_API_KEY) jobs.push(job(`bing_${channelHint}`, query, () => searchBingWeb(query, channelHint), 10000));
   if (GOOGLE_CSE_API_KEY && GOOGLE_CSE_ID) jobs.push(job(`google_cse_${channelHint}`, query, () => searchGoogleCse(query, channelHint), 10000));
-  if (SERPAPI_KEY) jobs.push(job(`serpapi_${channelHint}`, query, () => searchSerpApi(query, channelHint), 12000));
+  if (BRAVE_SEARCH_API_KEY) jobs.push(job(`brave_${channelHint}`, query, () => searchBraveWeb(query, channelHint), 10000));
   if (TAVILY_API_KEY) jobs.push(job(`tavily_${channelHint}`, query, () => searchTavily(query, channelHint), 12000));
+  jobs.push(job(`wikimedia_${channelHint}`, query, () => searchWikimedia(query, channelHint), 9000));
   return jobs;
 }
 
 function newsSearchApiJobs(query, channelHint, job) {
   const jobs = [];
   if (NEWSAPI_KEY) jobs.push(job(`newsapi_${channelHint}`, query, () => searchNewsApi(query, channelHint), 10000));
-  if (SERPAPI_KEY) jobs.push(job(`serpapi_news_${channelHint}`, query, () => searchSerpApiNews(query, channelHint), 12000));
+  if (BRAVE_SEARCH_API_KEY) jobs.push(job(`brave_news_${channelHint}`, query, () => searchBraveNews(query, channelHint), 10000));
   if (TAVILY_API_KEY) jobs.push(job(`tavily_news_${channelHint}`, query, () => searchTavily(query, channelHint === "counter_evidence" ? "counter_evidence" : "newsMedia"), 12000));
   return jobs;
 }
@@ -1236,6 +1303,29 @@ async function searchDuckDuckGo(query, channelHint = "web") {
   return { results };
 }
 
+async function searchMojeek(query, channelHint = "web") {
+  const url = `https://www.mojeek.com/search?q=${encodeURIComponent(query)}`;
+  const html = await fetchText(url, {
+    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+    accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "accept-language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+    "cache-control": "no-cache",
+    referer: "https://www.mojeek.com/",
+  });
+  const blocks = html.split(/<li class="r-1[^"]*"[^>]*>/).slice(1, 11);
+  const results = blocks.map((block) => {
+    const titleMatch = block.match(/<a[^>]+href="([^"]+)"[^>]*class="title"[^>]*>([\s\S]*?)<\/a>/i) || block.match(/<a[^>]+class="title"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+    const snippetMatch = block.match(/<p[^>]*class="s"[^>]*>([\s\S]*?)<\/p>/i) || block.match(/<div[^>]*class="ab"[^>]*>([\s\S]*?)<\/div>/i);
+    const citeMatch = block.match(/<span[^>]*class="cite"[^>]*>([\s\S]*?)<\/span>/i);
+    const target = titleMatch ? decodeHtml(titleMatch[1]) : "";
+    const title = titleMatch ? stripHtml(decodeHtml(titleMatch[2])) : "";
+    const snippet = snippetMatch ? stripHtml(decodeHtml(snippetMatch[1] || "")) : "";
+    const sourceName = citeMatch ? stripHtml(decodeHtml(citeMatch[1])) : hostname(target);
+    return normalizeResult({ title, url: target, snippet, sourceName, connector: `mojeek_${channelHint}`, channelHint, query });
+  }).filter((result) => result.title && result.url);
+  return { results };
+}
+
 async function searchReddit(query) {
   const url = `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&limit=10&sort=relevance&type=link`;
   const json = await fetchJson(url);
@@ -1292,6 +1382,81 @@ async function searchGoogleCse(query, channelHint = "web") {
         snippet: item.snippet || item.htmlSnippet,
         sourceName: item.displayLink,
         connector: "google_custom_search",
+        channelHint,
+        query,
+      }),
+    ),
+  };
+}
+
+async function searchBraveWeb(query, channelHint = "web") {
+  const params = new URLSearchParams({ q: query, count: "10", country: "us", search_lang: "en" });
+  const url = `https://api.search.brave.com/res/v1/web/search?${params.toString()}`;
+  const json = await fetchJson(url, {
+    Accept: "application/json",
+    "Accept-Encoding": "gzip",
+    "X-Subscription-Token": BRAVE_SEARCH_API_KEY,
+  });
+  const items = Array.isArray(json?.web?.results) ? json.web.results : [];
+  return {
+    results: items.slice(0, 10).map((item) =>
+      normalizeResult({
+        title: item.title,
+        url: item.url,
+        snippet: item.description || item.extra_snippets?.join(" "),
+        sourceName: item.profile?.long_name || item.meta_url?.hostname || hostname(item.url),
+        connector: "brave_web_search",
+        channelHint,
+        query,
+      }),
+    ),
+  };
+}
+
+async function searchBraveNews(query, channelHint = "newsMedia") {
+  const params = new URLSearchParams({ q: query, count: "10", country: "us", search_lang: "en", spellcheck: "1" });
+  const url = `https://api.search.brave.com/res/v1/news/search?${params.toString()}`;
+  const json = await fetchJson(url, {
+    Accept: "application/json",
+    "Accept-Encoding": "gzip",
+    "X-Subscription-Token": BRAVE_SEARCH_API_KEY,
+  });
+  const items = Array.isArray(json?.results) ? json.results : [];
+  return {
+    results: items.slice(0, 10).map((item) =>
+      normalizeResult({
+        title: item.title,
+        url: item.url,
+        snippet: item.description || item.snippet || item.meta_desc,
+        publishedAt: item.page_age || item.age || item.published_at,
+        sourceName: item.meta_url?.hostname || item.profile?.long_name || hostname(item.url),
+        connector: "brave_news_search",
+        channelHint,
+        query,
+      }),
+    ),
+  };
+}
+
+async function searchWikimedia(query, channelHint = "web") {
+  const language = /[^\u0000-\u007f]/.test(query) ? "zh" : "en";
+  const params = new URLSearchParams({ q: query, limit: "10" });
+  const url = `https://api.wikimedia.org/core/v1/wikipedia/${language}/search/page?${params.toString()}`;
+  const headers = {
+    Accept: "application/json",
+    "User-Agent": USER_AGENT,
+  };
+  if (WIKIMEDIA_API_TOKEN) headers.Authorization = `Bearer ${WIKIMEDIA_API_TOKEN}`;
+  const json = await fetchJson(url, headers);
+  const items = Array.isArray(json?.pages) ? json.pages : [];
+  return {
+    results: items.slice(0, 10).map((item) =>
+      normalizeResult({
+        title: item.title,
+        url: `https://${language}.wikipedia.org/wiki/${encodeURIComponent(item.key || item.title || "")}`,
+        snippet: item.excerpt || item.description || "",
+        sourceName: `${language}.wikipedia.org`,
+        connector: "wikimedia_search",
         channelHint,
         query,
       }),
@@ -1428,6 +1593,45 @@ async function searchCrossref(query) {
       });
     }).filter((result) => result.title && result.url),
   };
+}
+
+async function searchArxiv(query) {
+  const params = new URLSearchParams({
+    search_query: `all:${query}`,
+    start: "0",
+    max_results: "8",
+    sortBy: "relevance",
+    sortOrder: "descending",
+  });
+  const url = `https://export.arxiv.org/api/query?${params.toString()}`;
+  const xml = await fetchText(url, { Accept: "application/atom+xml,text/xml;q=0.9,*/*;q=0.8" });
+  const entries = xml.match(/<entry>[\s\S]*?<\/entry>/g) || [];
+  return {
+    results: entries.slice(0, 8).map((entry) => {
+      const title = extractXmlTag(entry, "title");
+      const summary = extractXmlTag(entry, "summary");
+      const id = extractXmlTag(entry, "id");
+      const publishedAt = extractXmlTag(entry, "published");
+      const authors = unique((entry.match(/<name>([\s\S]*?)<\/name>/g) || []).map((item) => stripHtml(decodeHtml(item.replace(/<\/?name>/g, ""))))).slice(0, 4);
+      const categories = unique([...entry.matchAll(/term="([^"]+)"/g)].map((match) => match[1])).slice(0, 3);
+      const detail = [publishedAt ? publishedAt.slice(0, 10) : "", authors.join(", "), categories.join(", ")].filter(Boolean).join(" · ");
+      return normalizeResult({
+        title: title || "arXiv preprint",
+        url: id || "",
+        snippet: `${detail}${summary ? ` · ${summary}` : ""}`.trim(),
+        publishedAt,
+        sourceName: "arXiv",
+        connector: "arxiv_search",
+        channelHint: "academic",
+        query,
+      });
+    }).filter((result) => result.title && result.url),
+  };
+}
+
+function extractXmlTag(text, tagName) {
+  const match = String(text || "").match(new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\\/${tagName}>`, "i"));
+  return match ? stripHtml(decodeHtml(match[1].replace(/<!\[CDATA\[|\]\]>/g, ""))).trim() : "";
 }
 
 function crossrefDate(item) {
@@ -3002,8 +3206,8 @@ function inferredChannelsForResult(result) {
   return [...ids];
 }
 
-async function fetchText(url) {
-  const response = await fetch(url, { headers: { "user-agent": USER_AGENT, accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" } });
+async function fetchText(url, headers = {}) {
+  const response = await fetch(url, { headers: { "user-agent": USER_AGENT, accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", ...headers } });
   if (!response.ok) throw new Error(`${response.status} ${response.statusText} for ${url}`);
   return response.text();
 }

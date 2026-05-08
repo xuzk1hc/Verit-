@@ -132,18 +132,20 @@ https://verite-xxxx.onrender.com
 
 - 直接 URL 抓取
 - Bing Web Search API（可选，需 `BING_SEARCH_API_KEY`）
+- Brave Search API Web / News（可选，需 `BRAVE_SEARCH_API_KEY`）
 - Google Custom Search API（可选，需 `GOOGLE_CSE_API_KEY` 和 `GOOGLE_CSE_ID`）
-- SerpAPI Google / Google News（可选，需 `SERPAPI_KEY`）
 - NewsAPI Everything（可选，需 `NEWSAPI_KEY`）
 - Tavily Search（可选，需 `TAVILY_API_KEY`）
 - Google News RSS（默认关闭；需 `VERITE_GOOGLE_NEWS_RSS=1` 手动启用）
 - GDELT News API
 - DuckDuckGo 通用网页检索
+- Mojeek 通用网页检索
+- Wikimedia Search（公开知识源，用于背景 / 历史 / 实体补充）
 - 官方 / 原始文件定向检索
 - 现实世界旁证定向检索
 - Reddit 社交线索检索
 - 自媒体 / KOL 线索检索
-- PubMed / Crossref 学术检索
+- PubMed / Crossref / arXiv 学术检索
 - 主动证伪检索
 
 正式搜索 API 都是可选增强项。未配置 Key 时，La vérité 会自动使用公开连接器；配置 Key 后，联网后端会把正式 API 结果加入同一套证据评分流程，适合 Render / VPS 等云端环境降低 403、超时和地区差异。Google News RSS 在云端容易被限流或封锁，因此默认关闭，避免同一连接器失败被大量 query 放大。
@@ -152,15 +154,19 @@ https://verite-xxxx.onrender.com
 
 ```text
 BING_SEARCH_API_KEY=
+BRAVE_SEARCH_API_KEY=
 GOOGLE_CSE_API_KEY=
 GOOGLE_CSE_ID=
-SERPAPI_KEY=
 NEWSAPI_KEY=
 TAVILY_API_KEY=
+WIKIMEDIA_API_TOKEN=
 VERITE_GOOGLE_NEWS_RSS=0
+VERITE_CONNECTOR_BACKOFF_MS=60000
 ```
 
 后端使用服务器当前时间计算证据时间置信，不再硬编码日期。实时 / 结果型新闻会优先采纳新近证据；旧新闻、缺少发布时间的网页会被降权或只作为背景。
+
+`VERITE_CONNECTOR_BACKOFF_MS` 用于公开连接器限流退避。比如 Mojeek 返回 403 / 429 后，后端会临时跳过同组 Mojeek 请求，避免同一轮检索把失败次数放大。
 
 当前社交平台检索受公开网页和平台限制影响。X、微博、Facebook、Instagram 等平台的完整数据需要后续接入正式 API 或合规数据供应商。
 

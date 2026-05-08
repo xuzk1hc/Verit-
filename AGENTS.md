@@ -46,17 +46,24 @@ Keep the existing `VERITE_*` names for compatibility with local `.env` and Rende
 - `VERITE_AI_COMMITTEE`, `VERITE_AI_API_KEY`, `VERITE_AI_BASE_URL`, `VERITE_AI_MODEL`
 - `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`
 - `BING_SEARCH_API_KEY`
+- `BRAVE_SEARCH_API_KEY`
 - `GOOGLE_CSE_API_KEY`, `GOOGLE_CSE_ID`
-- `SERPAPI_KEY`
 - `NEWSAPI_KEY`
+- `WIKIMEDIA_API_TOKEN`
 - `VERITE_GOOGLE_NEWS_RSS`
+- `VERITE_CONNECTOR_BACKOFF_MS`
 
 Do not commit `.env`; it may contain search and AI API keys.
 
 ## Current Product Behavior
 
 - Google News RSS is disabled by default. Enable only with `VERITE_GOOGLE_NEWS_RSS=1`.
-- SerpAPI is the preferred Google-backed connector when `SERPAPI_KEY` is configured.
+- SerpAPI is intentionally disabled and no longer participates in retrieval, even if a `SERPAPI_KEY` exists in local environment variables.
+- Brave Search is available as an optional paid connector when `BRAVE_SEARCH_API_KEY` is configured.
+- Wikimedia Search is enabled as a public background / knowledge connector; `WIKIMEDIA_API_TOKEN` is optional.
+- Mojeek is enabled as a public web-search connector for additional independent coverage.
+- Mojeek uses browser-like headers, per-stage probe limits, and connector backoff because it often returns 403 / 429 from hosted environments.
+- PubMed, Crossref, and arXiv are enabled for academic / paper validation when the input is classified as science, medical, technical, or research-related.
 - Real-time and result-style claims apply evidence freshness constraints. Old or undated pages are downgraded or treated as background unless they are direct authoritative confirmation.
 - Support evidence for high-impact claims is capped when it lacks T0-T2 sources.
 - The AI Review Committee is displayed below the seven-angle scoring section when enabled, but it is explanatory and does not directly overwrite the final score.
