@@ -22,9 +22,11 @@ const GOOGLE_CSE_API_KEY = process.env.GOOGLE_CSE_API_KEY || "";
 const GOOGLE_CSE_ID = process.env.GOOGLE_CSE_ID || "";
 const SERPAPI_KEY = process.env.SERPAPI_KEY || "";
 const NEWSAPI_KEY = process.env.NEWSAPI_KEY || "";
+const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
 const GOOGLE_NEWS_RSS_ENABLED = process.env.VERITE_GOOGLE_NEWS_RSS === "1";
 const CURRENT_DATE = new Date();
 const USER_AGENT = "La-verite/0.2 (+local fact-check research tool)";
+const SECRET_VALUES = [AI_API_KEY, BING_SEARCH_API_KEY, GOOGLE_CSE_API_KEY, GOOGLE_CSE_ID, SERPAPI_KEY, NEWSAPI_KEY, TAVILY_API_KEY].filter(Boolean);
 
 async function loadEnvFile(fileName) {
   let text = "";
@@ -533,7 +535,7 @@ async function runSearchPlan(input) {
     const settled = await Promise.allSettled(runnable.map((spec) => withTimeout(spec.make(), spec.timeout || 9000)));
     for (const [index, item] of settled.entries()) {
       if (item.status === "fulfilled") raw.push(...(item.value.results || []));
-      else errors.push({ connector: runnable[index]?.connector || "unknown", message: item.reason?.message || String(item.reason) });
+      else errors.push({ connector: runnable[index]?.connector || "unknown", message: redactSecrets(item.reason?.message || String(item.reason)) });
     }
     const state = evaluateRetrievalState(raw, input);
     stages.push({
@@ -728,7 +730,7 @@ function summarizeSearchErrors(errors = []) {
   for (const item of errors) {
     const rawConnector = typeof item === "string" ? "unknown" : item.connector || "unknown";
     const connector = normalizeErrorConnector(rawConnector);
-    const message = typeof item === "string" ? item : item.message || "";
+    const message = redactSecrets(typeof item === "string" ? item : item.message || "");
     const bucket = groups.get(connector) || { connector, count: 0, sample: "" };
     bucket.count += 1;
     if (!bucket.sample && message) bucket.sample = message;
@@ -744,11 +746,24 @@ function normalizeErrorConnector(connector) {
   return connector || "unknown";
 }
 
+function redactSecrets(value) {
+  let text = String(value || "");
+  text = text.replace(/([?&](?:api_key|apiKey|key)=)[^&\s]+/gi, "$1[REDACTED]");
+  text = text.replace(/(Authorization:\s*Bearer\s+)[^\s]+/gi, "$1[REDACTED]");
+  text = text.replace(/tvly-[A-Za-z0-9-]+/g, "[REDACTED]");
+  for (const secret of SECRET_VALUES) {
+    if (!secret) continue;
+    text = text.split(secret).join("[REDACTED]");
+  }
+  return text;
+}
+
 function officialSearchApiJobs(query, channelHint, job) {
   const jobs = [];
   if (BING_SEARCH_API_KEY) jobs.push(job(`bing_${channelHint}`, query, () => searchBingWeb(query, channelHint), 10000));
   if (GOOGLE_CSE_API_KEY && GOOGLE_CSE_ID) jobs.push(job(`google_cse_${channelHint}`, query, () => searchGoogleCse(query, channelHint), 10000));
   if (SERPAPI_KEY) jobs.push(job(`serpapi_${channelHint}`, query, () => searchSerpApi(query, channelHint), 12000));
+  if (TAVILY_API_KEY) jobs.push(job(`tavily_${channelHint}`, query, () => searchTavily(query, channelHint), 12000));
   return jobs;
 }
 
@@ -756,6 +771,7 @@ function newsSearchApiJobs(query, channelHint, job) {
   const jobs = [];
   if (NEWSAPI_KEY) jobs.push(job(`newsapi_${channelHint}`, query, () => searchNewsApi(query, channelHint), 10000));
   if (SERPAPI_KEY) jobs.push(job(`serpapi_news_${channelHint}`, query, () => searchSerpApiNews(query, channelHint), 12000));
+  if (TAVILY_API_KEY) jobs.push(job(`tavily_news_${channelHint}`, query, () => searchTavily(query, channelHint === "counter_evidence" ? "counter_evidence" : "newsMedia"), 12000));
   return jobs;
 }
 
@@ -1582,6 +1598,35 @@ function scoreEvidence(bundle, input, localSignals) {
     channels,
     contextFrame: claimFrame,
     duplicateClusters,
+  };
+}
+
+async function searchTavily(query, channelHint = "web") {
+  const wantsNews = /news|english_network|counter_evidence/i.test(channelHint);
+  const payload = {
+    api_key: TAVILY_API_KEY,
+    query,
+    topic: wantsNews ? "news" : "general",
+    search_depth: "advanced",
+    max_results: 10,
+    include_answer: false,
+    include_raw_content: false,
+  };
+  const json = await fetchJson("https://api.tavily.com/search", { "Content-Type": "application/json" }, "POST", JSON.stringify(payload));
+  const items = Array.isArray(json?.results) ? json.results : [];
+  return {
+    results: items.slice(0, 10).map((item) =>
+      normalizeResult({
+        title: item.title,
+        url: item.url,
+        snippet: item.content || item.snippet,
+        publishedAt: item.published_date || item.publishedAt || item.date,
+        sourceName: hostname(item.url),
+        connector: wantsNews ? "tavily_news" : "tavily_search",
+        channelHint,
+        query,
+      }),
+    ),
   };
 }
 
@@ -2963,8 +3008,8 @@ async function fetchText(url) {
   return response.text();
 }
 
-async function fetchJson(url, headers = {}) {
-  const response = await fetch(url, { headers: { "user-agent": USER_AGENT, accept: "application/json,text/plain,*/*", ...headers } });
+async function fetchJson(url, headers = {}, method = "GET", body = undefined) {
+  const response = await fetch(url, { method, body, headers: { "user-agent": USER_AGENT, accept: "application/json,text/plain,*/*", ...headers } });
   if (!response.ok) throw new Error(`${response.status} ${response.statusText} for ${url}`);
   return response.json();
 }

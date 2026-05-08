@@ -30,7 +30,15 @@ GOOGLE_CSE_API_KEY=...
 GOOGLE_CSE_ID=...
 SERPAPI_KEY=...
 NEWSAPI_KEY=...
+TAVILY_API_KEY=...
 VERITE_GOOGLE_NEWS_RSS=0
+VERITE_AI_COMMITTEE=0
+VERITE_AI_API_KEY=...
+VERITE_AI_BASE_URL=https://coding.dashscope.aliyuncs.com/v1
+VERITE_AI_MODEL=qwen3-coder-plus
+OPENAI_API_KEY=...
+OPENAI_BASE_URL=...
+OPENAI_MODEL=...
 ```
 
 这些变量都可以留空。只要配置其中任意一个，La vérité 后端就会在 GDELT、DuckDuckGo、PubMed、Crossref 等公开连接器之外，额外调用对应正式 API，并把结果纳入同一套交叉验证评分。
@@ -43,6 +51,7 @@ VERITE_GOOGLE_NEWS_RSS=0
 2. `SERPAPI_KEY`：Google / Google News 结果质量较好，但通常是付费服务。
 3. `GOOGLE_CSE_API_KEY` + `GOOGLE_CSE_ID`：适合自定义搜索范围。
 4. `NEWSAPI_KEY`：适合补充英文新闻源。
+5. `TAVILY_API_KEY`：适合补充通用网页和新闻语义搜索。
 
 后端证据时间置信使用服务器当前时间自动计算，不再硬编码日期。实时新闻会优先采纳新近证据，旧新闻和缺少发布时间的页面会降权。
 
@@ -55,7 +64,7 @@ docker build -t la-verite .
 docker run -d --name la-verite -p 8787:8787 \
   -e HOST=0.0.0.0 \
   -e VERITE_MEDIA_AI=1 \
-   la-verite
+  la-verite
 ```
 
 然后访问：
@@ -83,6 +92,8 @@ GOOGLE_CSE_API_KEY=可选
 GOOGLE_CSE_ID=可选
 SERPAPI_KEY=可选
 NEWSAPI_KEY=可选
+TAVILY_API_KEY=可选
+VERITE_GOOGLE_NEWS_RSS=0
 ```
 
 如果使用普通百炼通义千问模型，可以改成：

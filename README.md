@@ -120,6 +120,7 @@ https://verite-xxxx.onrender.com
 ├── docs/
 │   ├── deployment.md          # 公网部署说明
 │   └── mechanism.md           # 验证机制文档
+├── AGENTS.md                  # 给后续 AI agent 的项目约定
 ├── rules/
 │   └── fact_check_rules.yaml  # 机器可读评分规则
 ├── Dockerfile
@@ -134,6 +135,7 @@ https://verite-xxxx.onrender.com
 - Google Custom Search API（可选，需 `GOOGLE_CSE_API_KEY` 和 `GOOGLE_CSE_ID`）
 - SerpAPI Google / Google News（可选，需 `SERPAPI_KEY`）
 - NewsAPI Everything（可选，需 `NEWSAPI_KEY`）
+- Tavily Search（可选，需 `TAVILY_API_KEY`）
 - Google News RSS（默认关闭；需 `VERITE_GOOGLE_NEWS_RSS=1` 手动启用）
 - GDELT News API
 - DuckDuckGo 通用网页检索
@@ -154,12 +156,19 @@ GOOGLE_CSE_API_KEY=
 GOOGLE_CSE_ID=
 SERPAPI_KEY=
 NEWSAPI_KEY=
+TAVILY_API_KEY=
 VERITE_GOOGLE_NEWS_RSS=0
 ```
 
 后端使用服务器当前时间计算证据时间置信，不再硬编码日期。实时 / 结果型新闻会优先采纳新近证据；旧新闻、缺少发布时间的网页会被降权或只作为背景。
 
 当前社交平台检索受公开网页和平台限制影响。X、微博、Facebook、Instagram 等平台的完整数据需要后续接入正式 API 或合规数据供应商。
+
+## 后端 API
+
+- `GET /api/health`：后端状态、AI 复核配置、模型名和服务器时间。
+- `POST /api/check`：提交新闻链接 / 文字 / 素材摘要，返回评分报告。
+- `GET /api/search?q=...`：检索诊断接口，用于调试搜索连接器。
 
 ## AI 复核委员会
 
@@ -172,9 +181,12 @@ VERITE_AI_COMMITTEE=1
 VERITE_AI_API_KEY=
 VERITE_AI_BASE_URL=https://coding.dashscope.aliyuncs.com/v1
 VERITE_AI_MODEL=qwen3-coder-plus
+OPENAI_API_KEY=
+OPENAI_BASE_URL=
+OPENAI_MODEL=
 ```
 
-Key 只在服务端读取，不会发送到浏览器。Render 部署时请在 Environment 页面配置这些变量，不要写进公开仓库。
+Key 只在服务端读取，不会发送到浏览器。`OPENAI_*` 是兼容别名；优先使用 `VERITE_*` 保持项目配置一致。Render 部署时请在 Environment 页面配置这些变量，不要写进公开仓库。
 
 如果使用普通百炼通义千问模型，可改为：
 
