@@ -27,6 +27,11 @@ const GOOGLE_NEWS_RSS_ENABLED = process.env.VERITE_GOOGLE_NEWS_RSS === "1";
 const CURRENT_DATE = new Date();
 const USER_AGENT = "La-verite/0.2 (+local fact-check research tool)";
 const SECRET_VALUES = [AI_API_KEY, BING_SEARCH_API_KEY, GOOGLE_CSE_API_KEY, GOOGLE_CSE_ID, SERPAPI_KEY, NEWSAPI_KEY, TAVILY_API_KEY].filter(Boolean);
+const SEARCH_CACHE_TTL_MS = Number(process.env.VERITE_SEARCH_CACHE_TTL_MS || 12 * 60 * 1000);
+const SEARCH_MAX_CONCURRENCY = Math.max(2, Number(process.env.VERITE_SEARCH_MAX_CONCURRENCY || 20));
+const CONNECTOR_BACKOFF_MS = Number(process.env.VERITE_CONNECTOR_BACKOFF_MS || 60 * 1000);
+const searchCache = new Map();
+const connectorHealth = new Map();
 
 async function loadEnvFile(fileName) {
   let text = "";
@@ -347,6 +352,7 @@ function buildClaimPlan(input) {
     const worthiness = claimWorthiness(cleaned, input);
     const kind = claimKind(cleaned);
     const searchText = claimSearchText(cleaned, input);
+    const frame = buildStructuredClaimFrame(cleaned, input);
     return {
       id: `C${index + 1}`,
       text: cleaned,
@@ -355,6 +361,8 @@ function buildClaimPlan(input) {
       priority: claimPriority(worthiness, kind, input),
       searchText,
       signals: claimSignals(cleaned),
+      frame,
+      questions: buildClaimVerificationQuestions(cleaned, frame, input),
     };
   })
     .filter((claim) => claim.text && claim.worthiness >= 35)
@@ -438,6 +446,89 @@ function claimSignals(claim) {
     mediaDependent: /图片|视频|截图|照片|image|photo|video|screenshot/i.test(claim),
     speculative: /可能|或许|预计|据称|传|could|may|might|reportedly|allegedly/i.test(claim),
   };
+}
+
+function buildStructuredClaimFrame(claim, input = {}) {
+  const contextFrame = buildClaimContextFrame(claim);
+  const text = String(claim || "");
+  const englishContext = buildEnglishInformationContext({ ...input, text });
+  const entities = unique([
+    ...contextFrame.entities.map((concept) => concept.id || concept.terms?.[0] || ""),
+    ...extractNamedEntities(text),
+    ...englishContext.terms.filter((term) => /[A-Z][a-z]|\b[A-Z]{2,}\b/.test(term)),
+  ].filter(Boolean)).slice(0, 10);
+  const actions = unique([
+    ...contextFrame.actions.map((concept) => concept.id || concept.terms?.[0] || ""),
+    ...extractActionPhrases(text),
+  ].filter(Boolean)).slice(0, 8);
+  const topics = unique(contextFrame.topics.map((concept) => concept.id || concept.terms?.[0] || "").filter(Boolean)).slice(0, 8);
+  const timeWindow = extractClaimTimeWindow(text);
+  const numbers = contextFrame.numbers.slice(0, 8);
+  const quoteAttribution = extractQuoteAttribution(text);
+  return {
+    entities,
+    actions,
+    topics,
+    numbers,
+    dates: contextFrame.dates,
+    years: contextFrame.years,
+    timeWindow,
+    quoteAttribution,
+    analytical: contextFrame.isAnalytical,
+    language: hasNonEnglishSignal(text) ? "non_english_or_mixed" : "english_or_latin",
+  };
+}
+
+function extractNamedEntities(text) {
+  const value = String(text || "");
+  const chinese = value.match(/[\u4e00-\u9fa5]{2,12}(?:公司|集团|政府|部门|委员会|银行|大学|医院|球队|总统|主席|国王|王室|美联储|欧佩克|世界杯)?/g) || [];
+  const latin = value.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,4}\b|\b[A-Z][A-Z0-9&.+-]{1,}\b/g) || [];
+  return unique([...chinese, ...latin])
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 2 && !/^(The|This|That|May|June|July|News)$/i.test(item))
+    .slice(0, 12);
+}
+
+function extractActionPhrases(text) {
+  const value = String(text || "");
+  const patterns = [
+    /宣布|确认|发布|退出|卸任|离任|辞职|任命|签约|收购|制裁|起诉|调查|访问|到访|会见|批准|通过|生效|召回|晋级|出线|获得资格/g,
+    /\b(?:announc\w*|confirm\w*|release\w*|withdraw\w*|resign\w*|appoint\w*|sign\w*|acquir\w*|sanction\w*|probe\w*|visit\w*|meet\w*|approve\w*|qualif\w*)\b/gi,
+  ];
+  return unique(patterns.flatMap((pattern) => value.match(pattern) || [])).slice(0, 10);
+}
+
+function extractClaimTimeWindow(text) {
+  const value = String(text || "");
+  const dates = value.match(/\b(?:19\d{2}|20\d{2})[-/.年]?\d{0,2}[-/.月]?\d{0,2}日?\b|(?:今日|今天|昨日|昨天|明天|本周|上周|下周|当地时间|北京时间)|\b(?:today|yesterday|tomorrow|this week|last week|next week)\b/gi) || [];
+  if (!dates.length) return "";
+  return unique(dates).slice(0, 4).join(" / ");
+}
+
+function extractQuoteAttribution(text) {
+  const value = String(text || "");
+  const cn = value.match(/(?:据|援引|来自)([^，。；;]{2,24})(?:称|表示|报道|透露)/u);
+  if (cn) return cn[1].trim();
+  const en = value.match(/\b(?:according to|citing|quoted by)\s+([A-Z][A-Za-z0-9 .&-]{2,40})/i);
+  if (en) return en[1].trim();
+  return "";
+}
+
+function buildClaimVerificationQuestions(claim, frame, input = {}) {
+  const subject = frame.entities.slice(0, 3).join(" ");
+  const action = frame.actions.slice(0, 2).join(" ");
+  const topic = frame.topics.slice(0, 3).join(" ");
+  const time = frame.timeWindow || frame.years.slice(0, 2).join(" ");
+  const base = [subject, action, topic, time].filter(Boolean).join(" ") || claim;
+  const questions = [
+    `是否有权威来源直接确认：${claim}`,
+    `是否存在独立媒体或原始文件支持：${base}`,
+    `是否存在否认、更正、撤稿或事实核查：${base}`,
+  ];
+  if (frame.quoteAttribution) questions.push(`引用或消息来源是否可核验：${frame.quoteAttribution} ${base}`);
+  if (frame.numbers.length) questions.push(`数字是否与原始数据一致：${frame.numbers.slice(0, 3).join(" ")} ${base}`);
+  if (input.impact === "high") questions.push(`高影响信息是否至少有两个 T0-T2 独立来源确认：${base}`);
+  return unique(questions).slice(0, 5);
 }
 
 function claimSearchText(claim, input) {
@@ -524,29 +615,47 @@ async function runSearchPlan(input) {
   const allSpecs = buildRetrievalJobSpecs(input, queries);
 
   const runStage = async (name, specs) => {
-    const runnable = specs.filter((spec) => spec.query !== "" && !executed.has(spec.key));
-    if (!runnable.length) return evaluateRetrievalState(raw, input);
+    const beforeState = evaluateRetrievalState(raw, input);
+    const pending = specs.filter((spec) => spec.query !== "" && !executed.has(spec.key));
+    const skipped = [];
+    const runnable = [];
+    for (const spec of pending) {
+      const health = connectorStatus(spec.connector);
+      if (!health.available) {
+        skipped.push({ connector: spec.connector, reason: health.reason });
+        continue;
+      }
+      runnable.push(spec);
+    }
+    if (!runnable.length) return evaluateRetrievalState(raw, input, beforeState);
     for (const spec of runnable) {
       executed.add(spec.key);
       connectors.add(spec.connector);
     }
     const startedRawCount = raw.length;
     const startedErrorCount = errors.length;
-    const settled = await Promise.allSettled(runnable.map((spec) => withTimeout(spec.make(), spec.timeout || 9000)));
-    for (const [index, item] of settled.entries()) {
+    const settled = await runLimitedSearchJobs(runnable);
+    const cacheHits = settled.filter((item) => item.cacheHit).length;
+    for (const item of settled) {
       if (item.status === "fulfilled") raw.push(...(item.value.results || []));
-      else errors.push({ connector: runnable[index]?.connector || "unknown", message: redactSecrets(item.reason?.message || String(item.reason)) });
+      else errors.push({ connector: item.connector || "unknown", message: redactSecrets(item.reason?.message || String(item.reason)) });
     }
-    const state = evaluateRetrievalState(raw, input);
+    const state = evaluateRetrievalState(raw, input, beforeState);
     stages.push({
       name,
       jobs: runnable.length,
+      skippedJobs: skipped.length,
+      cacheHits,
       newResults: raw.length - startedRawCount,
       errors: errors.length - startedErrorCount,
       confidence: state.confidence,
       supportSignals: state.supportSignals,
       refuteSignals: state.refuteSignals,
       sourceDiversity: state.sourceDiversity,
+      strongSources: state.strongSources,
+      marginalSignals: state.marginalSignals,
+      marginalSources: state.marginalSources,
+      coverage: state.coverage,
       decision: "",
       reason: "",
     });
@@ -554,18 +663,18 @@ async function runSearchPlan(input) {
   };
 
   let state = await runStage("FIRE-1 快速定位", allSpecs.foundation);
-  let decision = retrievalDecision("foundation", state, input, queries);
+  let decision = retrievalDecision("foundation", state, input, queries, stages[stages.length - 1]);
   if (stages.length) Object.assign(stages[stages.length - 1], { decision: decision.action, reason: decision.reason });
 
   if (decision.action === "continue") {
     state = await runStage("FIRE-2 标准交叉验证", allSpecs.standard);
-    decision = retrievalDecision("standard", state, input, queries);
+    decision = retrievalDecision("standard", state, input, queries, stages[stages.length - 1]);
     if (stages.length) Object.assign(stages[stages.length - 1], { decision: decision.action, reason: decision.reason });
   }
 
   if (decision.action === "continue") {
     state = await runStage("FIRE-3 扩展反证 / 专项渠道", allSpecs.expanded);
-    decision = retrievalDecision("expanded", state, input, queries);
+    decision = retrievalDecision("expanded", state, input, queries, stages[stages.length - 1]);
     if (stages.length) Object.assign(stages[stages.length - 1], { decision: decision.action, reason: decision.reason });
   }
 
@@ -596,6 +705,8 @@ async function runSearchPlan(input) {
       finalDecision: decision.action,
       finalReason: decision.reason,
       stages,
+      connectorHealth: connectorHealthSnapshot(),
+      cache: searchCacheStats(),
     },
   };
 }
@@ -725,6 +836,112 @@ function dedupeJobSpecs(specs) {
   return output;
 }
 
+async function runLimitedSearchJobs(specs) {
+  const output = new Array(specs.length);
+  let cursor = 0;
+  const workerCount = Math.min(SEARCH_MAX_CONCURRENCY, specs.length);
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (cursor < specs.length) {
+      const index = cursor;
+      cursor += 1;
+      output[index] = await runSearchJobWithCache(specs[index]);
+    }
+  });
+  await Promise.all(workers);
+  return output.filter(Boolean);
+}
+
+async function runSearchJobWithCache(spec) {
+  const cacheKey = searchCacheKey(spec);
+  const cached = getSearchCache(cacheKey);
+  if (cached) {
+    recordConnectorSuccess(spec.connector, true);
+    return { status: "fulfilled", value: cached, connector: spec.connector, cacheHit: true };
+  }
+  try {
+    const value = await withTimeout(spec.make(), spec.timeout || 9000);
+    const normalizedValue = { results: Array.isArray(value?.results) ? value.results : [] };
+    setSearchCache(cacheKey, normalizedValue);
+    recordConnectorSuccess(spec.connector, false);
+    return { status: "fulfilled", value: normalizedValue, connector: spec.connector, cacheHit: false };
+  } catch (error) {
+    recordConnectorFailure(spec.connector, error);
+    return { status: "rejected", reason: error, connector: spec.connector, cacheHit: false };
+  }
+}
+
+function searchCacheKey(spec) {
+  return `${spec.connector}:${spec.query || ""}`.toLowerCase();
+}
+
+function getSearchCache(key) {
+  const entry = searchCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.createdAt > SEARCH_CACHE_TTL_MS) {
+    searchCache.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+function setSearchCache(key, value) {
+  if (!SEARCH_CACHE_TTL_MS) return;
+  if (searchCache.size > 400) {
+    const oldest = [...searchCache.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt).slice(0, 60);
+    for (const [oldKey] of oldest) searchCache.delete(oldKey);
+  }
+  searchCache.set(key, { createdAt: Date.now(), value });
+}
+
+function connectorStatus(connector) {
+  const health = connectorHealth.get(connector);
+  if (!health?.backoffUntil || Date.now() >= health.backoffUntil) return { available: true, reason: "" };
+  return { available: false, reason: `backoff until ${new Date(health.backoffUntil).toISOString()}` };
+}
+
+function recordConnectorSuccess(connector, cacheHit = false) {
+  const health = connectorHealth.get(connector) || { failures: 0, successes: 0, cacheHits: 0, backoffUntil: 0, lastError: "" };
+  health.successes += 1;
+  if (cacheHit) health.cacheHits += 1;
+  health.failures = 0;
+  health.backoffUntil = 0;
+  health.lastError = "";
+  connectorHealth.set(connector, health);
+}
+
+function recordConnectorFailure(connector, error) {
+  const health = connectorHealth.get(connector) || { failures: 0, successes: 0, cacheHits: 0, backoffUntil: 0, lastError: "" };
+  health.failures += 1;
+  health.lastError = redactSecrets(error?.message || String(error));
+  if (health.failures >= 2) {
+    const multiplier = Math.min(8, 2 ** Math.min(health.failures - 2, 3));
+    health.backoffUntil = Date.now() + CONNECTOR_BACKOFF_MS * multiplier;
+  }
+  connectorHealth.set(connector, health);
+}
+
+function connectorHealthSnapshot() {
+  return [...connectorHealth.entries()]
+    .map(([connector, health]) => ({
+      connector,
+      failures: health.failures || 0,
+      successes: health.successes || 0,
+      cacheHits: health.cacheHits || 0,
+      backoff: health.backoffUntil && Date.now() < health.backoffUntil,
+      lastError: health.lastError || "",
+    }))
+    .filter((item) => item.failures || item.successes || item.cacheHits || item.backoff)
+    .slice(0, 20);
+}
+
+function searchCacheStats() {
+  return {
+    ttlMs: SEARCH_CACHE_TTL_MS,
+    size: searchCache.size,
+    maxConcurrency: SEARCH_MAX_CONCURRENCY,
+  };
+}
+
 function summarizeSearchErrors(errors = []) {
   const groups = new Map();
   for (const item of errors) {
@@ -740,8 +957,12 @@ function summarizeSearchErrors(errors = []) {
 }
 
 function normalizeErrorConnector(connector) {
-  if (/gdelt|english_network/.test(connector)) return "gdelt_news";
+  if (/serpapi/.test(connector)) return connector;
+  if (/tavily/.test(connector)) return connector;
+  if (/bing/.test(connector)) return connector;
+  if (/google_cse/.test(connector)) return connector;
   if (/google_news/.test(connector)) return "google_news_rss";
+  if (/gdelt/.test(connector)) return "gdelt_news";
   if (/duckduckgo|ddg/.test(connector)) return "duckduckgo";
   return connector || "unknown";
 }
@@ -775,13 +996,14 @@ function newsSearchApiJobs(query, channelHint, job) {
   return jobs;
 }
 
-function evaluateRetrievalState(raw, input) {
+function evaluateRetrievalState(raw, input, previousState = null) {
   const claim = input.text || input.sourceName || input.url;
   const terms = expandClaimTerms(claim, buildEnglishInformationContext(input));
   const supportive = [];
   const refuting = [];
   const sourceSet = new Set();
   const strongSet = new Set();
+  const coverage = { news: 0, official: 0, primary: 0, realWorld: 0, academic: 0, counter: 0 };
   for (const result of dedupeResults(raw).slice(0, 80)) {
     const text = `${result.title || ""} ${result.snippet || ""}`.toLowerCase();
     const source = classifySource(result.url, result.sourceName, result.channelHint, result.connector);
@@ -791,6 +1013,14 @@ function evaluateRetrievalState(raw, input) {
     const host = hostname(result.url) || result.sourceName || result.connector || "unknown";
     if (relevance >= 38) sourceSet.add(host);
     if (source.score >= 75 && relevance >= 45) strongSet.add(host);
+    if (relevance >= 35) {
+      if (source.channel === "newsMedia") coverage.news += 1;
+      if (source.channel === "authoritativeStatement" || result.channelHint === "official") coverage.official += 1;
+      if (source.channel === "primaryRecord") coverage.primary += 1;
+      if (source.channel === "realWorldTrace" || result.channelHint === "real_world") coverage.realWorld += 1;
+      if (source.channel === "academicEvidence" || result.channelHint === "academic") coverage.academic += 1;
+      if (result.channelHint === "counter_evidence" || contradiction >= 55) coverage.counter += 1;
+    }
     if (relevance >= 45 && support >= 42 && contradiction < 55) supportive.push({ host, score: source.score + relevance + support });
     if (contradiction >= 55 && relevance >= 35) refuting.push({ host, score: source.score + contradiction });
   }
@@ -800,32 +1030,42 @@ function evaluateRetrievalState(raw, input) {
   const strongSources = strongSet.size;
   let confidence = clamp(28 + supportSignals * 13 + refuteSignals * 14 + sourceDiversity * 4 + strongSources * 7);
   if (!supportSignals && !refuteSignals) confidence = Math.min(confidence, 48 + Math.min(8, sourceDiversity));
+  const marginalSignals = previousState ? Math.max(0, supportSignals + refuteSignals - previousState.supportSignals - previousState.refuteSignals) : supportSignals + refuteSignals;
+  const marginalSources = previousState ? Math.max(0, sourceDiversity - previousState.sourceDiversity) : sourceDiversity;
   return {
     confidence,
     supportSignals,
     refuteSignals,
     sourceDiversity,
     strongSources,
+    marginalSignals,
+    marginalSources,
+    coverage,
   };
 }
 
-function retrievalDecision(stage, state, input, queries) {
+function retrievalDecision(stage, state, input, queries, stageStats = {}) {
   const highImpact = input.impact === "high";
   const academicNeed = queries.academicNeeded;
   const mediaNeed = Boolean(input.media?.length);
   const hasConflict = state.refuteSignals > 0 && state.supportSignals > 0;
   const enoughStrong = state.supportSignals >= (highImpact ? 3 : 2) && state.strongSources >= (highImpact ? 3 : 2) && state.sourceDiversity >= (highImpact ? 4 : 3);
+  const minCoverage = hasMinimumCoverage(state, input, queries);
+  const lowMarginalGain = stageStats && stageStats.jobs >= 4 && state.marginalSignals <= 0 && state.marginalSources <= 1;
 
   if (stage === "foundation") {
-    if (!highImpact && !academicNeed && !mediaNeed && !hasConflict && enoughStrong && state.confidence >= 78) {
+    if (!highImpact && !academicNeed && !mediaNeed && !hasConflict && enoughStrong && minCoverage && state.confidence >= 78) {
       return { action: "stop", reason: "快速阶段已找到足够独立强来源，停止扩展以节省检索成本" };
     }
     return { action: "continue", reason: highImpact || academicNeed || mediaNeed ? "高影响 / 学术 / 媒介信息需要更深交叉验证" : "快速阶段证据密度不足，进入标准交叉验证" };
   }
 
   if (stage === "standard") {
-    if (!hasConflict && enoughStrong && state.confidence >= 82 && !academicNeed) {
+    if (!hasConflict && enoughStrong && minCoverage && state.confidence >= 82 && !academicNeed) {
       return { action: "stop", reason: "标准阶段证据已收敛，跳过社交 / 自媒体扩展检索" };
+    }
+    if (!hasConflict && lowMarginalGain && state.confidence >= 68 && minCoverage && !academicNeed && !highImpact) {
+      return { action: "stop", reason: "新增检索的边际收益很低，停止扩展以降低成本" };
     }
     if (state.supportSignals === 0 && state.refuteSignals === 0) {
       return { action: "continue", reason: "仅命中背景来源，没有形成支持或反证，继续扩展检索" };
@@ -839,10 +1079,24 @@ function retrievalDecision(stage, state, input, queries) {
   return { action: "finalize", reason: "已完成扩展检索，进入评分汇总" };
 }
 
+function hasMinimumCoverage(state, input, queries) {
+  const coverage = state.coverage || {};
+  const highImpact = input.impact === "high";
+  const officialLike = (coverage.official || 0) + (coverage.primary || 0);
+  const mainstreamLike = coverage.news || 0;
+  if (queries.academicNeeded && !(coverage.academic || 0)) return false;
+  if (isOutcomeClaimRequiringConfirmation(input, extractLocalSignals(input))) {
+    return officialLike >= 1 || (mainstreamLike >= (highImpact ? 3 : 2) && state.strongSources >= 1);
+  }
+  if (highImpact) return (officialLike >= 1 && mainstreamLike >= 1) || state.strongSources >= 3;
+  return mainstreamLike >= 1 || officialLike >= 1 || state.strongSources >= 2;
+}
+
 function buildQueries(input) {
   const claim = input.text || input.url || input.sourceName;
   const activeClaims = input.claimPlan?.activeClaims?.length ? input.claimPlan.activeClaims : [{ id: "C1", searchText: claim, text: claim, priority: 60 }];
   const activeClaimTexts = activeClaims.map((item) => item.searchText || item.text).filter(Boolean);
+  const questionQueries = unique(activeClaims.flatMap((item) => buildQuestionDrivenQueries(item))).slice(0, 12);
   const englishContext = buildEnglishInformationContext(input);
   const terms = unique(activeClaimTexts.flatMap((item) => expandClaimTerms(item, englishContext))).slice(0, 32);
   const variants = unique(activeClaimTexts.flatMap((item) => buildClaimVariants(item, terms, englishContext))).slice(0, 16);
@@ -854,19 +1108,24 @@ function buildQueries(input) {
     claim,
     quoted,
     ...variants,
+    ...questionQueries.filter((item) => item.channel === "news").map((item) => item.query),
     terms.join(" "),
     `${variants[0] || claim} official`,
     `${variants[0] || claim} Reuters Bloomberg AP BBC`,
   ]).filter(Boolean).slice(0, 10);
 
   const officialDomains = inferOfficialDomains(claim, englishContext);
-  const official = officialDomains.flatMap((domain) => variants.slice(0, 4).map((variant) => `site:${domain} ${variant}`)).slice(0, 12);
+  const official = unique([
+    ...officialDomains.flatMap((domain) => variants.slice(0, 4).map((variant) => `site:${domain} ${variant}`)),
+    ...officialDomains.flatMap((domain) => questionQueries.filter((item) => item.channel === "official").slice(0, 4).map((item) => `site:${domain} ${item.query}`)),
+  ]).slice(0, 14);
   const englishBase = englishContext.terms.slice(0, 12).join(" ") || terms.filter((term) => /[a-z]/i.test(term)).slice(0, 10).join(" ");
   const contextBase = englishBase || terms.join(" ");
   const realWorld = [
     `${contextBase} filing official statement`,
     `${contextBase} market reaction price effective date`,
     `${contextBase} permit tender registry database`,
+    ...questionQueries.filter((item) => item.channel === "real_world").map((item) => item.query),
     ...englishNetwork.realWorld,
   ];
   const social = [
@@ -916,6 +1175,27 @@ function buildEnglishInformationContext(input) {
     domains: unique(concepts.flatMap((concept) => concept.domains || [])),
     original: claim,
   };
+}
+
+function buildQuestionDrivenQueries(claimItem = {}) {
+  const claim = claimItem.searchText || claimItem.text || "";
+  const frame = claimItem.frame || buildStructuredClaimFrame(claim);
+  const subject = frame.entities?.slice(0, 4).join(" ") || claim;
+  const action = frame.actions?.slice(0, 3).join(" ") || "";
+  const time = frame.timeWindow || frame.years?.slice(0, 2).join(" ") || "";
+  const numbers = frame.numbers?.slice(0, 3).join(" ") || "";
+  const core = [subject, action, time].filter(Boolean).join(" ").trim() || claim;
+  const output = [
+    { channel: "news", query: `${core} Reuters AP BBC Bloomberg` },
+    { channel: "news", query: `${core} confirmed reported timeline` },
+    { channel: "official", query: `${core} official statement press release filing` },
+    { channel: "official", query: `${subject} ${action} statement document`.trim() },
+    { channel: "real_world", query: `${core} effective date market reaction database` },
+    { channel: "real_world", query: `${core} records registry permit filing`.trim() },
+  ];
+  if (numbers) output.push({ channel: "real_world", query: `${subject} ${numbers} data source`.trim() });
+  if (frame.quoteAttribution) output.push({ channel: "official", query: `${frame.quoteAttribution} ${core} quote transcript`.trim() });
+  return output.filter((item) => item.query && item.query.length > 5);
 }
 
 function matchedCrossLingualConcepts(text) {
@@ -1559,7 +1839,20 @@ function scoreEvidence(bundle, input, localSignals) {
     const freshness = evidenceFreshness(result.publishedAt, input, localSignals);
     const counterProbe = result.channelHint === "counter_evidence";
     const academicQuality = academicQualityScore(text, result.url, result.connector);
-    const finalScore = clamp(Math.round(tierInfo.score * 0.32 + relevance * 0.19 + support * 0.16 + contextMatch.score * 0.14 + recency * 0.16 + (tierInfo.channel === "academicEvidence" ? academicQuality * 0.1 : 0) + (counterProbe ? contradiction * 0.14 : 0) - contradiction * 0.2 - freshness.penalty));
+    const evidenceDecision = decideEvidenceLabel({
+      result,
+      resultText: text,
+      input,
+      localSignals,
+      contextMatch,
+      support,
+      contradiction,
+      tierInfo,
+      freshness,
+      academicQuality,
+    });
+    const labelBoost = evidenceDecision.label === "SUPPORTS" ? 5 : evidenceDecision.label === "REFUTES" ? -8 : evidenceDecision.label === "CONFLICTING" ? -4 : 0;
+    const finalScore = clamp(Math.round(tierInfo.score * 0.32 + relevance * 0.19 + support * 0.16 + contextMatch.score * 0.14 + recency * 0.16 + (tierInfo.channel === "academicEvidence" ? academicQuality * 0.1 : 0) + (counterProbe ? contradiction * 0.14 : 0) - contradiction * 0.2 - freshness.penalty + labelBoost));
     return {
       ...result,
       tier: tierInfo.tier,
@@ -1578,7 +1871,9 @@ function scoreEvidence(bundle, input, localSignals) {
       contextReasons: contextMatch.reasons,
       score: finalScore,
       counterProbe,
-      stance: stanceForEvidence({ support, contradiction, resultText: text, input, localSignals, contextMatch }),
+      evidenceDecision,
+      evidenceLabel: evidenceDecision.label,
+      stance: stanceFromEvidenceLabel(evidenceDecision.label),
     };
   }).filter((item) => item.relevance >= 35 || item.contextScore >= 48 || (item.sourceScore >= 90 && (item.relevance >= 25 || item.contextScore >= 35)));
 
@@ -2155,6 +2450,8 @@ function toReportLink(item) {
     channel: channelLabels[channelIds[0]] || channelLabels[item.channel] || item.channel || "新闻媒体",
     match: item.contextRole || "",
     contextScore: item.contextScore || 0,
+    evidenceLabel: item.evidenceLabel || item.evidenceDecision?.label || "",
+    evidenceRationale: item.evidenceDecision?.rationale || "",
     duplicateCount: item.duplicateCount || 1,
     connector: item.connector || "",
     publishedAt: item.publishedAt || "",
@@ -2869,6 +3166,88 @@ function isSpecificNamedEvent(input) {
   const hasNamedEntity = /[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*|[\u4e00-\u9fa5]{2,}/.test(text);
   const isShortEnough = text.replace(/\s+/g, "").length <= 120;
   return Boolean(hasConcreteAction && hasNamedEntity && isShortEnough);
+}
+
+function decideEvidenceLabel({ result, resultText, input, localSignals, contextMatch, support, contradiction, tierInfo, freshness }) {
+  const text = String(resultText || "");
+  const frame = buildClaimContextFrame(input.text || input.sourceName || "");
+  const entityCoverage = contextMatch?.entityCoverage ?? 0;
+  const actionCoverage = contextMatch?.actionCoverage ?? 0;
+  const topicCoverage = contextMatch?.topicCoverage ?? 0;
+  const temporalCoverage = contextMatch?.temporalCoverage ?? 0;
+  const sourceTier = tierInfo?.tier || "T5";
+  const reasons = [];
+  const strongSource = ["T0", "T1", "T2"].includes(sourceTier) || ["authoritativeStatement", "primaryRecord", "academicEvidence"].includes(tierInfo?.channel);
+  const hasCoreEntity = frame.entities.length ? entityCoverage >= 34 : contextMatch?.conceptCoverage >= 40;
+  const hasAction = frame.actions.length ? actionCoverage >= (localSignals.analysisClaim ? 30 : 45) : true;
+  const hasTopic = frame.topics.length >= 2 ? topicCoverage >= 45 : true;
+  const hasFreshness = !localSignals.timeSensitiveNews || freshness?.level === "fresh" || freshness?.level === "recent" || freshness?.level === "not_required";
+  const directSignal = directClaimSignal(result, input.text || "");
+  const refuteSignal = contradiction >= 58 && currentRefutationEvidence(text);
+  const explicitSupport = support >= 62 && hasCoreEntity && hasAction && hasTopic;
+  const contextualSupport = contextMatch?.supportive && hasCoreEntity && hasFreshness;
+
+  if (hasCoreEntity) reasons.push("主体匹配");
+  if (hasAction) reasons.push("动作/事件匹配");
+  if (contextMatch?.reasons?.length) reasons.push(...contextMatch.reasons.slice(0, 3));
+  if (!hasFreshness) reasons.push(`时间置信不足:${freshness?.label || "未知"}`);
+  if (strongSource) reasons.push(`强来源:${sourceTier}`);
+
+  if (isOutcomeClaimRequiringConfirmation(input, localSignals)) {
+    const outcomeSignal = outcomeConfirmationSignal(text, input.text);
+    if (outcomeSignal <= -45 || refuteSignal) {
+      return evidenceDecision("REFUTES", 82, "结果型信息被当前反向证据否定", reasons, contextMatch, freshness, sourceTier);
+    }
+    if (outcomeSignal >= 65 && strongSource && hasFreshness) {
+      return evidenceDecision("SUPPORTS", clamp(70 + Math.min(20, directSignal * 0.18)), "结果型信息得到强来源直接确认", reasons, contextMatch, freshness, sourceTier);
+    }
+    return evidenceDecision("NOT_ENOUGH_INFO", 45, "结果型信息缺少强来源直接确认", reasons, contextMatch, freshness, sourceTier);
+  }
+
+  if (localSignals.negatedClaim) {
+    const affirmativeEvidence = affirmativeClaimEvidence(text, input.text);
+    const negativeEvidence = negativeClaimEvidence(text, input.text);
+    if (affirmativeEvidence > 55) return evidenceDecision("REFUTES", 78, "证据与否定式原信息相反", reasons, contextMatch, freshness, sourceTier);
+    if (negativeEvidence > 55 || refuteSignal) return evidenceDecision("SUPPORTS", 72, "证据支持否定式原信息", reasons, contextMatch, freshness, sourceTier);
+  }
+
+  if (refuteSignal && (hasCoreEntity || contextMatch?.score >= 45)) {
+    return evidenceDecision("REFUTES", clamp(66 + contradiction * 0.25 + (strongSource ? 8 : 0)), "同主体反向证据或事实核查", reasons, contextMatch, freshness, sourceTier);
+  }
+  if (contradiction >= 55 && (explicitSupport || contextualSupport)) {
+    return evidenceDecision("CONFLICTING", 58, "同一证据同时包含支持和反向信号", reasons, contextMatch, freshness, sourceTier);
+  }
+  if ((explicitSupport || contextualSupport || directSignal >= 66) && hasFreshness) {
+    return evidenceDecision("SUPPORTS", clamp(58 + support * 0.22 + contextMatch.score * 0.2 + (strongSource ? 8 : 0)), contextMatch?.supportive ? "上下文与事实链支持" : "主体、动作和事实要素匹配", reasons, contextMatch, freshness, sourceTier);
+  }
+  if (contextMatch?.score >= 42 || support >= 45) {
+    return evidenceDecision("BACKGROUND", clamp(38 + contextMatch.score * 0.35), "相关背景，尚不足以证明或反驳", reasons, contextMatch, freshness, sourceTier);
+  }
+  return evidenceDecision("NOT_ENOUGH_INFO", 30, "相关性不足", reasons, contextMatch, freshness, sourceTier);
+}
+
+function evidenceDecision(label, confidence, rationale, reasons, contextMatch, freshness, sourceTier) {
+  return {
+    label,
+    confidence: clamp(confidence),
+    rationale,
+    sourceTier,
+    freshness: freshness?.label || "",
+    coverage: {
+      entity: contextMatch?.entityCoverage ?? 0,
+      action: contextMatch?.actionCoverage ?? 0,
+      topic: contextMatch?.topicCoverage ?? 0,
+      temporal: contextMatch?.temporalCoverage ?? 0,
+    },
+    reasons: unique(reasons || []).slice(0, 6),
+  };
+}
+
+function stanceFromEvidenceLabel(label) {
+  if (label === "SUPPORTS") return "支持";
+  if (label === "REFUTES") return "反驳";
+  if (label === "CONFLICTING") return "冲突";
+  return "背景";
 }
 
 function stanceForEvidence({ support, contradiction, resultText, input, localSignals, contextMatch }) {

@@ -32,6 +32,9 @@ SERPAPI_KEY=...
 NEWSAPI_KEY=...
 TAVILY_API_KEY=...
 VERITE_GOOGLE_NEWS_RSS=0
+VERITE_SEARCH_CACHE_TTL_MS=720000
+VERITE_SEARCH_MAX_CONCURRENCY=20
+VERITE_CONNECTOR_BACKOFF_MS=60000
 VERITE_AI_COMMITTEE=0
 VERITE_AI_API_KEY=...
 VERITE_AI_BASE_URL=https://coding.dashscope.aliyuncs.com/v1
@@ -54,6 +57,8 @@ OPENAI_MODEL=...
 5. `TAVILY_API_KEY`：适合补充通用网页和新闻语义搜索。
 
 后端证据时间置信使用服务器当前时间自动计算，不再硬编码日期。实时新闻会优先采纳新近证据，旧新闻和缺少发布时间的页面会降权。
+
+缓存、并发和退避变量可以不配置，默认值适合 Render 免费实例。多人使用或付费 API 配额紧张时，可适当提高 `VERITE_SEARCH_CACHE_TTL_MS`、降低 `VERITE_SEARCH_MAX_CONCURRENCY`。
 
 ## Docker / VPS
 

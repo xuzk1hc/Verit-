@@ -873,6 +873,7 @@ function renderClaimSplit(claimPlan = {}) {
     escapeHtml(claim.id || "--"),
     escapeHtml(claim.text || "--"),
     escapeHtml(claim.kind || "--"),
+    escapeHtml((claim.questions || []).slice(0, 2).join(" / ") || "--"),
     scoreCell(claim.worthiness || 0),
     scoreCell(claim.priority || 0),
   ]));
@@ -889,8 +890,9 @@ function renderRetrievalPlan(plan = {}) {
   section.classList.remove("is-hidden");
   setRows("retrievalRows", stages.map((stage) => [
     escapeHtml(stage.name || "--"),
-    `${Math.round(Number(stage.jobs || 0))}`,
-    `${Math.round(Number(stage.newResults || 0))} 条 / 错误 ${Math.round(Number(stage.errors || 0))}`,
+    `${Math.round(Number(stage.jobs || 0))}${stage.skippedJobs ? ` / 跳过 ${Math.round(Number(stage.skippedJobs || 0))}` : ""}`,
+    `${Math.round(Number(stage.newResults || 0))} 条 / 错误 ${Math.round(Number(stage.errors || 0))}${stage.cacheHits ? ` / 缓存 ${Math.round(Number(stage.cacheHits || 0))}` : ""}`,
+    `信号 +${Math.round(Number(stage.marginalSignals || 0))} / 来源 +${Math.round(Number(stage.marginalSources || 0))}`,
     scoreCell(stage.confidence || 0),
     `${badge(stage.decision || "--", stage.decision === "stop" ? 80 : stage.decision === "continue" ? 58 : 66)}<div class="agent-action">${escapeHtml(stage.reason || "")}</div>`,
   ]));
@@ -1039,11 +1041,12 @@ function renderLinkGroup(id, links) {
     const stance = escapeHtml(item.stance || "背景");
     const channel = escapeHtml(item.channel || "");
     const match = item.match ? ` · ${escapeHtml(item.match)}${item.contextScore ? ` ${Math.round(Number(item.contextScore))}%` : ""}` : "";
+    const label = item.evidenceLabel ? ` · ${escapeHtml(item.evidenceLabel)}` : "";
     const duplicates = Number(item.duplicateCount) > 1 ? ` · 同源转载 ${Math.round(Number(item.duplicateCount))} 条按 1 条计` : "";
     return `
       <a class="link-item" href="${escapeHtml(item.href)}" target="_blank" rel="noopener noreferrer">
         <span class="link-title">${title}</span>
-        <span class="link-meta">${source} · ${tier} · ${score} · ${stance}${channel ? ` · ${channel}` : ""}${match}${duplicates}</span>
+        <span class="link-meta">${source} · ${tier} · ${score} · ${stance}${label}${channel ? ` · ${channel}` : ""}${match}${duplicates}</span>
       </a>
     `;
   }).join("");

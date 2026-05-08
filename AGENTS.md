@@ -49,7 +49,9 @@ Keep the existing `VERITE_*` names for compatibility with local `.env` and Rende
 - `GOOGLE_CSE_API_KEY`, `GOOGLE_CSE_ID`
 - `SERPAPI_KEY`
 - `NEWSAPI_KEY`
+- `TAVILY_API_KEY`
 - `VERITE_GOOGLE_NEWS_RSS`
+- `VERITE_SEARCH_CACHE_TTL_MS`, `VERITE_SEARCH_MAX_CONCURRENCY`, `VERITE_CONNECTOR_BACKOFF_MS`
 
 Do not commit `.env`; it may contain search and AI API keys.
 
@@ -57,6 +59,10 @@ Do not commit `.env`; it may contain search and AI API keys.
 
 - Google News RSS is disabled by default. Enable only with `VERITE_GOOGLE_NEWS_RSS=1`.
 - SerpAPI is the preferred Google-backed connector when `SERPAPI_KEY` is configured.
+- Tavily is used as an optional search/news connector when `TAVILY_API_KEY` is configured.
+- Claim splitting now includes structured frames and question-style verification prompts inspired by ClaimDecomp / AVeriTeC.
+- Evidence rows now carry FEVER / AVeriTeC-style labels: `SUPPORTS`, `REFUTES`, `BACKGROUND`, `CONFLICTING`, `NOT_ENOUGH_INFO`.
+- Retrieval uses FIRE-style staged search plus in-memory query caching, connector failure backoff, and bounded concurrency.
 - Real-time and result-style claims apply evidence freshness constraints. Old or undated pages are downgraded or treated as background unless they are direct authoritative confirmation.
 - Support evidence for high-impact claims is capped when it lacks T0-T2 sources.
 - The AI Review Committee is displayed below the seven-angle scoring section when enabled, but it is explanatory and does not directly overwrite the final score.
@@ -64,7 +70,7 @@ Do not commit `.env`; it may contain search and AI API keys.
 
 ## Git / Deployment
 
-The current tracked repository is `https://github.com/xuzk1hc/Verit-`.
+The current tracked repository has moved to `https://github.com/xuzk1hc/La-verite`.
 
 Render public URL:
 

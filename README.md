@@ -10,8 +10,10 @@ https://verit.onrender.com
 
 ## 功能亮点
 
-- 信息拆解：把长文本拆成可核验的关键信息，并评估验证价值和优先级。
-- 动态检索预算：分阶段检索；证据收敛时停止扩展，证据不足或冲突时继续搜索。
+- 信息拆解：借鉴 ClaimDecomp / AVeriTeC，把长文本拆成可核验的关键信息，并生成“是否被确认 / 是否有原始来源 / 是否存在反证”的问题式检索任务。
+- 证据标签：借鉴 FEVER / AVeriTeC，对每条证据标注 `SUPPORTS`、`REFUTES`、`BACKGROUND`、`CONFLICTING` 或 `NOT_ENOUGH_INFO`，再映射到支持、反驳和背景证据。
+- 动态检索预算：借鉴 FIRE，分阶段检索；证据收敛时停止扩展，证据不足或冲突时继续搜索。
+- 稳定性机制：内置 query 级 TTL 缓存、连接器失败退避和并发限制，降低 API 成本与云端连接器抖动。
 - 英文信息网络：无论输入中文还是其他语言，都会同步生成英文检索式。
 - 多渠道交叉验证：新闻媒体、官方来源、原始文件、现实世界旁证、社交平台、自媒体/KOL、学术/期刊渠道。
 - 主动证伪：自动搜索否认、辟谣、撤稿、更正、fact check、correction、retraction 等反向线索。
@@ -158,6 +160,9 @@ SERPAPI_KEY=
 NEWSAPI_KEY=
 TAVILY_API_KEY=
 VERITE_GOOGLE_NEWS_RSS=0
+VERITE_SEARCH_CACHE_TTL_MS=720000
+VERITE_SEARCH_MAX_CONCURRENCY=20
+VERITE_CONNECTOR_BACKOFF_MS=60000
 ```
 
 后端使用服务器当前时间计算证据时间置信，不再硬编码日期。实时 / 结果型新闻会优先采纳新近证据；旧新闻、缺少发布时间的网页会被降权或只作为背景。
