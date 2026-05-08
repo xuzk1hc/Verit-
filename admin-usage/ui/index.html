@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>La vérité 使用情况</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="brand">
+        <div class="brand-title">La vérité</div>
+        <div class="brand-sub">使用情况后台</div>
+      </div>
+      <div class="range">
+        <label class="field">
+          <span>From</span>
+          <input id="from" type="datetime-local" />
+        </label>
+        <label class="field">
+          <span>To</span>
+          <input id="to" type="datetime-local" />
+        </label>
+        <button id="refresh" class="btn">刷新</button>
+      </div>
+    </header>
+
+    <main class="content">
+      <section class="grid">
+        <div class="card">
+          <div class="card-title">请求数</div>
+          <div id="kpi-requests" class="kpi">-</div>
+          <div class="kpi-sub">
+            <span>成功 <b id="kpi-ok">-</b></span>
+            <span>失败 <b id="kpi-error">-</b></span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">访客数</div>
+          <div id="kpi-visitors" class="kpi">-</div>
+          <div class="kpi-sub">
+            <span>平均耗时 <b id="kpi-avg">-</b> ms</span>
+            <span>P95 <b id="kpi-p95">-</b> ms</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">流量</div>
+          <div class="kpi-row">
+            <div class="kpi-mini">
+              <div class="kpi-mini-label">入站</div>
+              <div id="kpi-in" class="kpi-mini-value">-</div>
+            </div>
+            <div class="kpi-mini">
+              <div class="kpi-mini-label">出站</div>
+              <div id="kpi-out" class="kpi-mini-value">-</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">热门接口</div>
+        <div class="panel-body">
+          <table class="table" id="table-endpoints">
+            <thead>
+              <tr><th>路径</th><th class="right">次数</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">最近请求</div>
+        <div class="panel-body">
+          <table class="table" id="table-recent">
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>方法</th>
+                <th>路径</th>
+                <th class="right">状态</th>
+                <th class="right">耗时(ms)</th>
+                <th>访客</th>
+                <th>输入摘要</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
+
