@@ -3,16 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>La vérité 使用情况</title>
+    <title>La vérité 数据平台</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <header class="header">
       <div class="brand">
         <div class="brand-title">La vérité</div>
-        <div class="brand-sub">使用情况后台</div>
+        <div class="brand-sub">产品数据平台 · 监控看板</div>
       </div>
-      <div class="range">
+      <div class="filters">
         <label class="field">
           <span>From</span>
           <input id="from" type="datetime-local" />
@@ -21,72 +21,251 @@
           <span>To</span>
           <input id="to" type="datetime-local" />
         </label>
+        <label class="field">
+          <span>Type</span>
+          <select id="type">
+            <option value="">全部</option>
+            <option value="event">event</option>
+            <option value="data">data</option>
+            <option value="statement">statement</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Impact</span>
+          <select id="impact">
+            <option value="">全部</option>
+            <option value="high">high</option>
+            <option value="medium">medium</option>
+            <option value="low">low</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Verdict</span>
+          <select id="verdict">
+            <option value="">全部</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Score</span>
+          <select id="scoreBucket">
+            <option value="">全部</option>
+            <option value="90-100">90-100</option>
+            <option value="75-89">75-89</option>
+            <option value="60-74">60-74</option>
+            <option value="45-59">45-59</option>
+            <option value="25-44">25-44</option>
+            <option value="0-24">0-24</option>
+          </select>
+        </label>
+        <label class="check">
+          <input id="hasMedia" type="checkbox" />
+          <span>带媒体</span>
+        </label>
+        <label class="check">
+          <input id="hasAcademicEvidence" type="checkbox" />
+          <span>学术命中</span>
+        </label>
+        <label class="check">
+          <input id="hasConnectorError" type="checkbox" />
+          <span>连接器错误</span>
+        </label>
+        <label class="check">
+          <input id="aiCommitteeEnabled" type="checkbox" />
+          <span>AI committee</span>
+        </label>
         <button id="refresh" class="btn">刷新</button>
       </div>
     </header>
 
     <main class="content">
-      <section class="grid">
+      <section class="kpis">
         <div class="card">
-          <div class="card-title">请求数</div>
-          <div id="kpi-requests" class="kpi">-</div>
+          <div class="card-title">总验证次数</div>
+          <div id="kpi-checks" class="kpi">-</div>
           <div class="kpi-sub">
-            <span>成功 <b id="kpi-ok">-</b></span>
-            <span>失败 <b id="kpi-error">-</b></span>
+            <span>UV <b id="kpi-checkuv">-</b></span>
+            <span>请求总数 <b id="kpi-req">-</b></span>
           </div>
         </div>
         <div class="card">
-          <div class="card-title">访客数</div>
-          <div id="kpi-visitors" class="kpi">-</div>
+          <div class="card-title">平均最终分数</div>
+          <div id="kpi-score" class="kpi">-</div>
           <div class="kpi-sub">
-            <span>平均耗时 <b id="kpi-avg">-</b> ms</span>
-            <span>P95 <b id="kpi-p95">-</b> ms</span>
+            <span>高可信 <b id="kpi-high">-</b></span>
+            <span>中可信 <b id="kpi-mid">-</b></span>
+            <span>低可信 <b id="kpi-low">-</b></span>
           </div>
         </div>
         <div class="card">
-          <div class="card-title">流量</div>
+          <div class="card-title">性能 / 错误</div>
           <div class="kpi-row">
             <div class="kpi-mini">
-              <div class="kpi-mini-label">入站</div>
-              <div id="kpi-in" class="kpi-mini-value">-</div>
+              <div class="kpi-mini-label">平均耗时</div>
+              <div id="kpi-avgElapsed" class="kpi-mini-value">-</div>
             </div>
             <div class="kpi-mini">
-              <div class="kpi-mini-label">出站</div>
-              <div id="kpi-out" class="kpi-mini-value">-</div>
+              <div class="kpi-mini-label">P95 / P99</div>
+              <div id="kpi-p95p99" class="kpi-mini-value">-</div>
+            </div>
+            <div class="kpi-mini">
+              <div class="kpi-mini-label">错误率</div>
+              <div id="kpi-errRate" class="kpi-mini-value">-</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">最近 3 小时预警</div>
+          <div class="kpi-row">
+            <div class="kpi-mini">
+              <div class="kpi-mini-label">低分率</div>
+              <div id="kpi-alertLow" class="kpi-mini-value">-</div>
+            </div>
+            <div class="kpi-mini">
+              <div class="kpi-mini-label">错误率</div>
+              <div id="kpi-alertErr" class="kpi-mini-value">-</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid-2">
+        <div class="panel">
+          <div class="panel-title">验证次数趋势</div>
+          <div class="panel-body">
+            <div id="chart-count" class="chart"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">平均分数趋势</div>
+          <div class="panel-body">
+            <div id="chart-score" class="chart"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid-3">
+        <div class="panel">
+          <div class="panel-title">分数区间分布</div>
+          <div class="panel-body">
+            <div id="dist-score" class="bars"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">Verdict 分布</div>
+          <div class="panel-body">
+            <div id="dist-verdict" class="bars"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">Type / Impact</div>
+          <div class="panel-body">
+            <div class="split">
+              <div>
+                <div class="subhead">Type</div>
+                <div id="dist-type" class="bars"></div>
+              </div>
+              <div>
+                <div class="subhead">Impact</div>
+                <div id="dist-impact" class="bars"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid-2">
+        <div class="panel">
+          <div class="panel-title">渠道命中 / 风险项</div>
+          <div class="panel-body">
+            <div class="split">
+              <div>
+                <div class="subhead">Channel Hits</div>
+                <div id="dist-channel" class="bars"></div>
+              </div>
+              <div>
+                <div class="subhead">Risk Items</div>
+                <div id="dist-risk" class="bars"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">连接器错误 / 封顶原因</div>
+          <div class="panel-body">
+            <div class="split">
+              <div>
+                <div class="subhead">Connector Errors</div>
+                <div id="dist-connector" class="bars"></div>
+              </div>
+              <div>
+                <div class="subhead">Cap Notes</div>
+                <div id="dist-cap" class="bars"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid-2">
+        <div class="panel">
+          <div class="panel-title">耗时趋势（Avg / P95 / P99）</div>
+          <div class="panel-body">
+            <div id="chart-latency" class="chart"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">错误趋势 / 状态码分布</div>
+          <div class="panel-body">
+            <div class="split">
+              <div>
+                <div class="subhead">Error Trend</div>
+                <div id="chart-errors" class="chart"></div>
+              </div>
+              <div>
+                <div class="subhead">Status</div>
+                <div id="dist-status" class="bars"></div>
+                <div class="subhead">Proxy 502</div>
+                <div id="kpi-proxy502" class="kpi-mini-value">-</div>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
       <section class="panel">
-        <div class="panel-title">热门接口</div>
+        <div class="panel-title">明细事件</div>
         <div class="panel-body">
-          <table class="table" id="table-endpoints">
-            <thead>
-              <tr><th>路径</th><th class="right">次数</th></tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-title">最近请求</div>
-        <div class="panel-body">
-          <table class="table" id="table-recent">
+          <div class="table-actions">
+            <label class="field small">
+              <span>Sort</span>
+              <select id="sort">
+                <option value="tsDesc">最新</option>
+                <option value="elapsedDesc">最慢验证</option>
+                <option value="scoreAsc">最低分</option>
+                <option value="scoreDesc">最高分</option>
+              </select>
+            </label>
+            <button id="loadMore" class="btn secondary">加载更多</button>
+          </div>
+          <table class="table" id="table-events">
             <thead>
               <tr>
                 <th>时间</th>
-                <th>方法</th>
-                <th>路径</th>
-                <th class="right">状态</th>
-                <th class="right">耗时(ms)</th>
                 <th>访客</th>
-                <th>输入摘要</th>
+                <th>type</th>
+                <th>impact</th>
+                <th class="right">score</th>
+                <th>verdict</th>
+                <th>cap</th>
+                <th class="right">elapsed</th>
+                <th class="right">status</th>
+                <th>errors</th>
+                <th>flags</th>
               </tr>
             </thead>
             <tbody></tbody>
           </table>
+          <div id="table-meta" class="muted"></div>
         </div>
       </section>
     </main>
@@ -94,4 +273,3 @@
     <script type="module" src="/app.js"></script>
   </body>
 </html>
-
