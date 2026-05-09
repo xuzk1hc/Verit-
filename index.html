@@ -39,19 +39,24 @@
           <div class="grid-3">
             <div class="field">
               <label for="claimType">类型</label>
-              <select id="claimType" name="claimType">
+              <select id="claimType" name="claimType" required>
+                <option value="" selected disabled>请选择</option>
                 <option value="event">事件</option>
                 <option value="data">数据</option>
                 <option value="statement">声明 / 引用</option>
+                <option value="fact">事实</option>
+                <option value="science">科学</option>
               </select>
             </div>
             <div class="field">
               <label for="impactLevel">影响</label>
-              <select id="impactLevel" name="impactLevel">
+              <select id="impactLevel" name="impactLevel" required aria-describedby="impactHelp">
+                <option value="" selected disabled>请选择</option>
                 <option value="high">高</option>
                 <option value="medium">中</option>
                 <option value="low">低</option>
               </select>
+              <p id="impactHelp" class="field-help">影响越高，越要求官方、主流媒体和多渠道证据；证据不足时评分会更保守。</p>
             </div>
             <div class="field">
               <label for="sourceName">来源</label>

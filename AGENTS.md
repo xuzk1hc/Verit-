@@ -46,23 +46,34 @@ Keep the existing `VERITE_*` names for compatibility with local `.env` and Rende
 - `VERITE_AI_COMMITTEE`, `VERITE_AI_API_KEY`, `VERITE_AI_BASE_URL`, `VERITE_AI_MODEL`
 - `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`
 - `BING_SEARCH_API_KEY`
+- `BRAVE_SEARCH_API_KEY`
 - `GOOGLE_CSE_API_KEY`, `GOOGLE_CSE_ID`
-- `SERPAPI_KEY`
 - `NEWSAPI_KEY`
 - `TAVILY_API_KEY`
+- `WIKIMEDIA_API_TOKEN`
 - `VERITE_GOOGLE_NEWS_RSS`
+- `VERITE_GOOGLE_NEWS_CACHE_TTL_MS`, `VERITE_GOOGLE_NEWS_MAX_PER_STAGE`, `VERITE_GOOGLE_NEWS_RSS_TIMEOUT_MS`, `VERITE_GOOGLE_NEWS_RESOLVE_TIMEOUT_MS`
 - `VERITE_SEARCH_CACHE_TTL_MS`, `VERITE_SEARCH_MAX_CONCURRENCY`, `VERITE_CONNECTOR_BACKOFF_MS`
+- `VERITE_MAX_JSON_BODY_BYTES`, `VERITE_RATE_LIMIT_WINDOW_MS`, `VERITE_RATE_LIMIT_MAX`
 
 Do not commit `.env`; it may contain search and AI API keys.
 
 ## Current Product Behavior
 
-- Google News RSS is disabled by default. Enable only with `VERITE_GOOGLE_NEWS_RSS=1`.
-- SerpAPI is the preferred Google-backed connector when `SERPAPI_KEY` is configured.
+- Google News RSS is enabled by default as a discovery connector. Set `VERITE_GOOGLE_NEWS_RSS=0` to disable it; only entries with identifiable original sources enter evidence scoring.
+- SerpAPI is intentionally disabled and no longer participates in retrieval, even if a `SERPAPI_KEY` exists in local environment variables.
 - Tavily is used as an optional search/news connector when `TAVILY_API_KEY` is configured.
 - Claim splitting now includes structured frames and question-style verification prompts inspired by ClaimDecomp / AVeriTeC.
 - Evidence rows now carry FEVER / AVeriTeC-style labels: `SUPPORTS`, `REFUTES`, `BACKGROUND`, `CONFLICTING`, `NOT_ENOUGH_INFO`.
 - Retrieval uses FIRE-style staged search plus in-memory query caching, connector failure backoff, and bounded concurrency.
+- Brave Search is available as an optional paid connector when `BRAVE_SEARCH_API_KEY` is configured.
+- Wikimedia Search is enabled as a public background / knowledge connector; `WIKIMEDIA_API_TOKEN` is optional.
+- Mojeek is enabled as a public web-search connector for additional independent coverage.
+- Mojeek uses browser-like headers, per-stage probe limits, and connector backoff because it often returns 403 / 429 from hosted environments.
+- PubMed, Crossref, and arXiv are enabled for academic / paper validation when the input is classified as science, medical, technical, or research-related.
+- Stable knowledge claims use encyclopedia / academic / official reference sources and should not be penalized for lacking fresh news coverage.
+- Static serving is allowlisted; never expose dotfiles, Docker / Render config, package metadata, or `.env` files over HTTP.
+- Direct URL fetching must pass public HTTP(S) URL validation to prevent SSRF into localhost, private networks, and cloud metadata endpoints.
 - Real-time and result-style claims apply evidence freshness constraints. Old or undated pages are downgraded or treated as background unless they are direct authoritative confirmation.
 - Support evidence for high-impact claims is capped when it lacks T0-T2 sources.
 - The AI Review Committee is displayed below the seven-angle scoring section when enabled, but it is explanatory and does not directly overwrite the final score.

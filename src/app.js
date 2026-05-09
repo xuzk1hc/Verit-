@@ -43,6 +43,30 @@ const profiles = {
       integrity: 0.18,
     },
   },
+  fact: {
+    label: "事实类",
+    weights: {
+      web: 0.18,
+      logic: 0.18,
+      history: 0.16,
+      sourceChain: 0.22,
+      realWorld: 0.08,
+      stats: 0.08,
+      integrity: 0.1,
+    },
+  },
+  science: {
+    label: "科学类",
+    weights: {
+      web: 0.18,
+      logic: 0.18,
+      history: 0.08,
+      sourceChain: 0.16,
+      realWorld: 0.06,
+      stats: 0.22,
+      integrity: 0.12,
+    },
+  },
 };
 
 const angleMeta = {
@@ -199,6 +223,7 @@ fileInput.addEventListener("change", renderFileStrip);
 resetBtn.addEventListener("click", resetApp);
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!form.reportValidity()) return;
   setAnalyzing(true);
   try {
     const report = await analyzeInput();
@@ -258,6 +283,7 @@ async function analyzeInput() {
   const sourceName = document.getElementById("sourceName").value.trim();
   const files = Array.from(fileInput.files || []);
   const media = await Promise.all(files.map(readMediaMeta));
+  if (!profiles[type] || !impact) throw new Error("请选择类型和影响");
 
   const backendReport = await analyzeWithBackend({ url, text, type, impact, sourceName, media });
   if (backendReport) return enrichReportWithClientMediaIntegrity(backendReport, media);
