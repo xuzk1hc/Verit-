@@ -49,14 +49,17 @@
               </select>
             </div>
             <div class="field">
-              <label for="impactLevel">影响</label>
+              <div class="label-row">
+                <label for="impactLevel">影响</label>
+                <span class="info-tip" tabindex="0" aria-describedby="impactHelp">!</span>
+                <span id="impactHelp" class="tooltip" role="tooltip">影响越高，越要求官方、主流媒体和多渠道证据；证据不足时评分会更保守。</span>
+              </div>
               <select id="impactLevel" name="impactLevel" required aria-describedby="impactHelp">
                 <option value="" selected disabled>请选择</option>
                 <option value="high">高</option>
                 <option value="medium">中</option>
                 <option value="low">低</option>
               </select>
-              <p id="impactHelp" class="field-help">影响越高，越要求官方、主流媒体和多渠道证据；证据不足时评分会更保守。</p>
             </div>
             <div class="field">
               <label for="sourceName">来源</label>
