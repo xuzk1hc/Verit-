@@ -14,6 +14,7 @@ https://verit.onrender.com
 - 动态检索预算：分阶段检索；证据收敛时停止扩展，证据不足或冲突时继续搜索。
 - 英文信息网络：无论输入中文还是其他语言，都会同步生成英文检索式。
 - 多渠道交叉验证：新闻媒体、官方来源、原始文件、现实世界旁证、社交平台、自媒体/KOL、学术/期刊渠道。
+- 稳定事实验证：对常识、百科、基础科学和历史事实，优先使用知识源 / 学术源 / 官方资料，而不是强制要求新闻报道。
 - 主动证伪：自动搜索否认、辟谣、撤稿、更正、fact check、correction、retraction 等反向线索。
 - 来源链识别：区分原始来源、同源转载、聚合页和独立报道；用户输入的原文不计为支持证据。
 - 媒介取证：检查 EXIF/XMP/C2PA、关键帧、压缩异常、ELA/JPEG Ghost、AI 生成痕迹。
@@ -136,7 +137,7 @@ https://verite-xxxx.onrender.com
 - Google Custom Search API（可选，需 `GOOGLE_CSE_API_KEY` 和 `GOOGLE_CSE_ID`）
 - NewsAPI Everything（可选，需 `NEWSAPI_KEY`）
 - Tavily Search（可选，需 `TAVILY_API_KEY`）
-- Google News RSS（默认关闭；需 `VERITE_GOOGLE_NEWS_RSS=1` 手动启用）
+- Google News RSS（默认开启；只作为新闻发现入口，必须识别到原始来源才进入证据评分）
 - GDELT News API
 - DuckDuckGo 通用网页检索
 - Mojeek 通用网页检索
@@ -148,7 +149,7 @@ https://verite-xxxx.onrender.com
 - PubMed / Crossref / arXiv 学术检索
 - 主动证伪检索
 
-正式搜索 API 都是可选增强项。未配置 Key 时，La vérité 会自动使用公开连接器；配置 Key 后，联网后端会把正式 API 结果加入同一套证据评分流程，适合 Render / VPS 等云端环境降低 403、超时和地区差异。Google News RSS 在云端容易被限流或封锁，因此默认关闭，避免同一连接器失败被大量 query 放大。
+正式搜索 API 都是可选增强项。未配置 Key 时，La vérité 会自动使用公开连接器；配置 Key 后，联网后端会把正式 API 结果加入同一套证据评分流程，适合 Render / VPS 等云端环境降低 403、超时和地区差异。Google News RSS 默认开启，但只用于发现新闻来源；如果 RSS 条目无法识别原始媒体来源，则不会进入证据池。
 
 可在本地 `.env` 或 Render Environment 中配置：
 
@@ -160,13 +161,24 @@ GOOGLE_CSE_ID=
 NEWSAPI_KEY=
 TAVILY_API_KEY=
 WIKIMEDIA_API_TOKEN=
-VERITE_GOOGLE_NEWS_RSS=0
+VERITE_GOOGLE_NEWS_RSS=1
+VERITE_GOOGLE_NEWS_CACHE_TTL_MS=900000
+VERITE_GOOGLE_NEWS_MAX_PER_STAGE=2
+VERITE_GOOGLE_NEWS_RSS_TIMEOUT_MS=6500
+VERITE_GOOGLE_NEWS_RESOLVE_TIMEOUT_MS=3000
 VERITE_CONNECTOR_BACKOFF_MS=60000
+VERITE_MAX_JSON_BODY_BYTES=102400
+VERITE_RATE_LIMIT_WINDOW_MS=60000
+VERITE_RATE_LIMIT_MAX=60
 ```
 
 后端使用服务器当前时间计算证据时间置信，不再硬编码日期。实时 / 结果型新闻会优先采纳新近证据；旧新闻、缺少发布时间的网页会被降权或只作为背景。
 
 `VERITE_CONNECTOR_BACKOFF_MS` 用于公开连接器限流退避。比如 Mojeek 返回 403 / 429 后，后端会临时跳过同组 Mojeek 请求，避免同一轮检索把失败次数放大。
+
+Google News RSS 默认开启，但作为发现入口处理：后端会缓存相同 query 的 RSS 结果，限制每个 FIRE 阶段的调用数，并尝试把 `news.google.com/rss/articles/...` 解析为原始媒体链接。解析失败且无法识别来源的条目不会进入证据池。
+
+`VERITE_MAX_JSON_BODY_BYTES` 和 `VERITE_RATE_LIMIT_*` 用于基础 API 防护，限制单次请求体大小和单 IP 请求频率。
 
 当前社交平台检索受公开网页和平台限制影响。X、微博、Facebook、Instagram 等平台的完整数据需要后续接入正式 API 或合规数据供应商。
 

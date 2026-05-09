@@ -52,6 +52,7 @@ Keep the existing `VERITE_*` names for compatibility with local `.env` and Rende
 - `WIKIMEDIA_API_TOKEN`
 - `VERITE_GOOGLE_NEWS_RSS`
 - `VERITE_CONNECTOR_BACKOFF_MS`
+- `VERITE_MAX_JSON_BODY_BYTES`, `VERITE_RATE_LIMIT_WINDOW_MS`, `VERITE_RATE_LIMIT_MAX`
 
 Do not commit `.env`; it may contain search and AI API keys.
 
@@ -64,6 +65,9 @@ Do not commit `.env`; it may contain search and AI API keys.
 - Mojeek is enabled as a public web-search connector for additional independent coverage.
 - Mojeek uses browser-like headers, per-stage probe limits, and connector backoff because it often returns 403 / 429 from hosted environments.
 - PubMed, Crossref, and arXiv are enabled for academic / paper validation when the input is classified as science, medical, technical, or research-related.
+- Stable knowledge claims use encyclopedia / academic / official reference sources and should not be penalized for lacking fresh news coverage.
+- Static serving is allowlisted; never expose dotfiles, Docker / Render config, package metadata, or `.env` files over HTTP.
+- Direct URL fetching must pass public HTTP(S) URL validation to prevent SSRF into localhost, private networks, and cloud metadata endpoints.
 - Real-time and result-style claims apply evidence freshness constraints. Old or undated pages are downgraded or treated as background unless they are direct authoritative confirmation.
 - Support evidence for high-impact claims is capped when it lacks T0-T2 sources.
 - The AI Review Committee is displayed below the seven-angle scoring section when enabled, but it is explanatory and does not directly overwrite the final score.

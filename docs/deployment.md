@@ -32,8 +32,15 @@ GOOGLE_CSE_ID=...
 NEWSAPI_KEY=...
 TAVILY_API_KEY=...
 WIKIMEDIA_API_TOKEN=...
-VERITE_GOOGLE_NEWS_RSS=0
+VERITE_GOOGLE_NEWS_RSS=1
+VERITE_GOOGLE_NEWS_CACHE_TTL_MS=900000
+VERITE_GOOGLE_NEWS_MAX_PER_STAGE=2
+VERITE_GOOGLE_NEWS_RSS_TIMEOUT_MS=6500
+VERITE_GOOGLE_NEWS_RESOLVE_TIMEOUT_MS=3000
 VERITE_CONNECTOR_BACKOFF_MS=60000
+VERITE_MAX_JSON_BODY_BYTES=102400
+VERITE_RATE_LIMIT_WINDOW_MS=60000
+VERITE_RATE_LIMIT_MAX=60
 VERITE_AI_COMMITTEE=0
 VERITE_AI_API_KEY=...
 VERITE_AI_BASE_URL=https://coding.dashscope.aliyuncs.com/v1
@@ -45,9 +52,11 @@ OPENAI_MODEL=...
 
 这些变量都可以留空。只要配置其中任意一个，La vérité 后端就会在 GDELT、DuckDuckGo、Mojeek、PubMed、Crossref、arXiv 等公开连接器之外，额外调用对应正式 API，并把结果纳入同一套交叉验证评分。
 
-`VERITE_GOOGLE_NEWS_RSS` 默认等同于 `0`。Render 等云端环境经常被 Google News RSS 限流或封锁，建议保持关闭；只有在本地或可稳定访问的服务器上，才设置为 `1`。
+`VERITE_GOOGLE_NEWS_RSS` 默认等同于 `1`。它只作为新闻发现入口；RSS 条目必须带有可识别的原始媒体来源，才会进入证据评分。后端会缓存相同 query、限制每个 FIRE 阶段调用数，并尝试把 Google News 跳转链接解析为原始媒体链接。若 Render 等云端环境被 Google News RSS 限流或封锁，可设置为 `0` 关闭。
 
 `VERITE_CONNECTOR_BACKOFF_MS` 控制公开连接器失败后的退避时间。Mojeek 这类公开网页源如果返回 403 / 429，后端会临时跳过同组请求，避免失败数量在同一轮验证中被放大。
+
+`VERITE_MAX_JSON_BODY_BYTES` 和 `VERITE_RATE_LIMIT_*` 控制基础 API 防护。默认限制单次 JSON 请求体约 100KB，单 IP 每分钟 60 次请求。
 
 推荐优先级：
 
@@ -98,8 +107,15 @@ GOOGLE_CSE_ID=可选
 NEWSAPI_KEY=可选
 TAVILY_API_KEY=可选
 WIKIMEDIA_API_TOKEN=可选
-VERITE_GOOGLE_NEWS_RSS=0
+VERITE_GOOGLE_NEWS_RSS=1
+VERITE_GOOGLE_NEWS_CACHE_TTL_MS=900000
+VERITE_GOOGLE_NEWS_MAX_PER_STAGE=2
+VERITE_GOOGLE_NEWS_RSS_TIMEOUT_MS=6500
+VERITE_GOOGLE_NEWS_RESOLVE_TIMEOUT_MS=3000
 VERITE_CONNECTOR_BACKOFF_MS=60000
+VERITE_MAX_JSON_BODY_BYTES=102400
+VERITE_RATE_LIMIT_WINDOW_MS=60000
+VERITE_RATE_LIMIT_MAX=60
 ```
 
 如果使用普通百炼通义千问模型，可以改成：
@@ -113,7 +129,7 @@ VERITE_AI_MODEL=qwen-plus
 
 ## 注意事项
 
-- 当前联网检索使用 GDELT、DuckDuckGo、Mojeek、PubMed、Crossref、arXiv、Wikimedia 等公开入口，并可选启用 Google News RSS。多人高频使用时，建议接入正式搜索 API，避免被限流。
+- 当前联网检索使用 Google News RSS、GDELT、DuckDuckGo、Mojeek、PubMed、Crossref、arXiv、Wikimedia 等公开入口。Google News RSS 仅用于发现原始媒体来源；多人高频使用时，建议接入正式搜索 API，避免被限流。
 - Wikimedia Search 可不带 token 使用；如果后续接入 Wikimedia access token，可填 `WIKIMEDIA_API_TOKEN`，用于提升官方配额与规范接入。
 - 媒介 AI 服务默认只在容器内部 `127.0.0.1:8790` 监听，不直接暴露给公网。
 - 上传的图片 / 视频会在前端生成缩略样本和结构化摘要；公网部署前仍建议在隐私政策中说明素材处理方式。
